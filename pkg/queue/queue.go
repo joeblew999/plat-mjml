@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,9 +45,12 @@ type Queue struct {
 
 // NewQueue creates a new email queue.
 func NewQueue(db *sql.DB, name string, workers int) (*Queue, error) {
-	// Setup goqite schema
+	// Setup goqite schema (ignore "already exists" errors)
 	if err := goqite.Setup(context.Background(), db); err != nil {
-		return nil, fmt.Errorf("setup goqite: %w", err)
+		// Check if it's just "table already exists" - that's fine
+		if !strings.Contains(err.Error(), "already exists") {
+			return nil, fmt.Errorf("setup goqite: %w", err)
+		}
 	}
 
 	q := goqite.New(goqite.NewOpts{
