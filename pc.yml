@@ -1,0 +1,48 @@
+version: "0.5"
+
+log_location: .pc.log
+log_level: info
+
+environment:
+  - "DATA_PATH=${DATA_PATH:-./.data}"
+  - "MJML_TEMPLATE_PATH=${MJML_TEMPLATE_PATH:-./templates}"
+
+processes:
+  # MCP Server - main service
+  server:
+    command: go run ./cmd/server
+    working_dir: .
+    availability:
+      restart: on_failure
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 8080
+        path: /sse
+      initial_delay_seconds: 2
+      period_seconds: 5
+
+  # Render all templates to HTML files
+  render-all:
+    command: |
+      for template in simple welcome reset_password notification; do
+        go run . render -template=$template -out=.data/$template.html
+        echo "Rendered $template"
+      done
+    working_dir: .
+    availability:
+      restart: "no"
+    disabled: true
+
+  # Watch templates directory for changes
+  watch:
+    command: |
+      echo "Watching templates directory..."
+      fswatch -o ./templates | while read; do
+        echo "Template changed, re-rendering..."
+        go run . render -template=simple -out=.data/simple.html
+      done
+    working_dir: .
+    availability:
+      restart: on_failure
+    disabled: true

@@ -1,0 +1,322 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{.subject}}</mj-title>
+    <mj-preview>{{.preview}}</mj-preview>
+    <mj-attributes>
+      <mj-all
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      ></mj-all>
+      <mj-text
+        font-weight="400"
+        font-size="16px"
+        color="#000000"
+        line-height="24px"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      ></mj-text>
+    </mj-attributes>
+    <mj-style inline="inline">
+      .body-section { -webkit-box-shadow: 1px 4px 11px 0px rgba(0, 0, 0, 0.15);
+      -moz-box-shadow: 1px 4px 11px 0px rgba(0, 0, 0, 0.15); box-shadow: 1px 4px
+      11px 0px rgba(0, 0, 0, 0.15); }
+    </mj-style>
+    <mj-style inline="inline"> .text-link { color: #5e6ebf } </mj-style>
+    <mj-style inline="inline"> .footer-link { color: #888888 } </mj-style>
+  </mj-head>
+  <mj-body background-color="#E7E7E7" width="600px">
+    <mj-section
+      full-width="full-width"
+      background-color="#040B4F"
+      padding-bottom="0"
+    >
+      <mj-column width="100%">
+        {{if .company_logo}}
+        <mj-image
+          src="{{.company_logo}}"
+          alt="{{.company_name}}"
+          align="center"
+          width="150px"
+        />
+        {{end}}
+        <mj-text
+          color="#ffffff"
+          font-weight="bold"
+          align="center"
+          text-transform="uppercase"
+          font-size="16px"
+          letter-spacing="1px"
+          padding-top="30px"
+        >
+          {{.location}}
+          <br />
+          <span style="color: #979797; font-weight: normal">-</span>
+        </mj-text>
+        <mj-text
+          color="#17CBC4"
+          align="center"
+          font-size="13px"
+          padding-top="0"
+          font-weight="bold"
+          text-transform="uppercase"
+          letter-spacing="1px"
+          line-height="20px"
+        >
+          {{.venue}}<br />{{.address}}
+        </mj-text>
+        {{if .header_image}}
+        <mj-image
+          src="{{.header_image}}"
+          width="600px"
+          alt=""
+          padding="0"
+          href="{{.header_link}}"
+        />
+        {{end}}
+      </mj-column>
+    </mj-section>
+    <mj-section background-color="#1f2e78">
+      <mj-column width="100%">
+        {{if .header_bottom_image}}
+        <mj-image
+          src="{{.header_bottom_image}}"
+          width="600px"
+          alt=""
+          padding="0"
+          href="{{.header_link}}"
+        />
+        {{end}}
+      </mj-column>
+    </mj-section>
+    <mj-wrapper padding-top="0" padding-bottom="0" css-class="body-section">
+      <mj-section
+        background-color="#ffffff"
+        padding-left="15px"
+        padding-right="15px"
+      >
+        <mj-column width="100%">
+          <mj-text color="#212b35" font-weight="bold" font-size="20px">
+            {{.title}}
+          </mj-text>
+          <mj-text color="#637381" font-size="16px"> Hi {{.name}}, </mj-text>
+          <mj-text color="#637381" font-size="16px">
+            {{.message}}
+          </mj-text>
+          {{if .description}}
+          <mj-text color="#637381" font-size="16px">
+            {{.description}}
+          </mj-text>
+          {{end}}
+          {{if .features}}
+          <mj-text color="#637381" font-size="16px">
+            <ul>
+              {{range .features}}
+              <li style="padding-bottom: 20px">
+                <strong>{{.title}}:</strong> {{.description}}
+              </li>
+              {{end}}
+            </ul>
+          </mj-text>
+          {{end}}
+          <mj-text color="#637381" font-size="16px" padding-bottom="30px">
+            {{.call_to_action_text}}
+          </mj-text>
+          {{if .primary_button_text}}
+          <mj-button
+            background-color="#5e6ebf"
+            align="center"
+            color="#ffffff"
+            font-size="17px"
+            font-weight="bold"
+            href="{{.primary_button_url}}"
+            width="300px"
+          >
+            {{.primary_button_text}}
+          </mj-button>
+          {{end}}
+          {{if .secondary_button_text}}
+          <mj-button
+            background-color="#5e6ebf"
+            align="center"
+            color="#ffffff"
+            font-size="17px"
+            font-weight="bold"
+            href="{{.secondary_button_url}}"
+            width="300px"
+          >
+            {{.secondary_button_text}}
+          </mj-button>
+          {{end}}
+          {{if .additional_info}}
+          <mj-text color="#637381" font-size="16px" padding-top="30px">
+            {{.additional_info}}
+          </mj-text>
+          {{end}}
+          <mj-text color="#637381" font-size="16px" padding-bottom="0">
+            {{.closing_message}}
+          </mj-text>
+        </mj-column>
+      </mj-section>
+      {{if .images}}
+      <mj-section
+        background-color="#ffffff"
+        padding-left="15px"
+        padding-right="15px"
+        padding-top="0"
+      >
+        {{range .images}}
+        <mj-column width="50%">
+          <mj-image
+            align="center"
+            src="{{.url}}"
+            alt="{{.alt}}"
+          />
+        </mj-column>
+        {{end}}
+      </mj-section>
+      {{end}}
+      <mj-section
+        background-color="#ffffff"
+        padding-left="15px"
+        padding-right="15px"
+        padding-top="0"
+      >
+        <mj-column width="100%">
+          <mj-divider border-color="#DFE3E8" border-width="1px" />
+        </mj-column>
+      </mj-section>
+      <mj-section background-color="#ffffff" padding="0 15px 0 15px">
+        <mj-column width="100%">
+          <mj-text
+            color="#212b35"
+            font-weight="bold"
+            font-size="20px"
+            padding-bottom="0"
+          >
+            {{.visit_title}}
+          </mj-text>
+          <mj-text color="#637381" font-size="16px">
+            {{.visit_message}}
+          </mj-text>
+        </mj-column>
+      </mj-section>
+      <mj-section
+        background-color="#ffffff"
+        padding-left="15px"
+        padding-right="15px"
+      >
+        <mj-column width="50%">
+          <mj-text
+            color="#212b35"
+            font-size="12px"
+            text-transform="uppercase"
+            font-weight="bold"
+            padding-bottom="0"
+          >
+            address
+          </mj-text>
+          <mj-text color="#637381" font-size="14px" padding-top="0">
+            {{.venue}}<br />{{.address}}
+          </mj-text>
+        </mj-column>
+        <mj-column width="50%">
+          <mj-text
+            color="#212b35"
+            font-size="12px"
+            text-transform="uppercase"
+            font-weight="bold"
+            padding-bottom="0"
+          >
+            Hours of Operation
+          </mj-text>
+          <mj-text color="#637381" font-size="14px" padding-top="0">
+            {{range .hours}}
+            {{.day}}: {{.time}}<br />
+            {{end}}
+          </mj-text>
+        </mj-column>
+      </mj-section>
+      {{if .map_image}}
+      <mj-section
+        background-color="#ffffff"
+        padding-left="15px"
+        padding-right="15px"
+      >
+        <mj-column width="100%">
+          <mj-image
+            src="{{.map_image}}"
+            alt="Location map"
+          />
+        </mj-column>
+      </mj-section>
+      {{end}}
+    </mj-wrapper>
+
+    <mj-wrapper full-width="full-width">
+      <mj-section>
+        <mj-column width="100%" padding="0">
+          {{if .social_links}}
+          <mj-social
+            font-size="15px"
+            icon-size="30px"
+            mode="horizontal"
+            padding="0"
+            align="center"
+          >
+            {{range .social_links}}
+            <mj-social-element
+              name="{{.platform}}"
+              href="{{.url}}"
+              background-color="#A1A0A0"
+            >
+            </mj-social-element>
+            {{end}}
+          </mj-social>
+          {{end}}
+          <mj-text
+            color="#445566"
+            font-size="11px"
+            font-weight="bold"
+            align="center"
+          >
+            View this email in your browser
+          </mj-text>
+          <mj-text
+            color="#445566"
+            font-size="11px"
+            align="center"
+            line-height="16px"
+          >
+            {{.disclaimer}}
+          </mj-text>
+          <mj-text
+            color="#445566"
+            font-size="11px"
+            align="center"
+            line-height="16px"
+          >
+            &copy; {{.company_name}}, All Rights Reserved.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+      <mj-section padding-top="0">
+        <mj-group>
+          <mj-column width="100%" padding-right="0">
+            <mj-text
+              color="#445566"
+              font-size="11px"
+              align="center"
+              line-height="16px"
+              font-weight="bold"
+            >
+              <a class="footer-link" href="{{.privacy_url}}">Privacy</a
+              >&#xA0;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0;&#xA0;<a
+                class="footer-link"
+                href="{{.unsubscribe_url}}"
+                >Unsubscribe</a
+              >
+            </mj-text>
+          </mj-column>
+        </mj-group>
+      </mj-section>
+    </mj-wrapper>
+  </mj-body>
+</mjml>

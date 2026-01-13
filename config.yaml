@@ -1,0 +1,19 @@
+name: plat-mjml
+host: 0.0.0.0
+port: 8080
+
+mcp:
+  name: mjml-server
+  messageTimeout: 30s
+
+templates:
+  dir: ./templates
+
+database:
+  path: ./.data/plat-mjml.db
+
+delivery:
+  maxRetries: 3
+  retryBackoff: 5m
+  maxBackoff: 4h
+  rateLimit: 60

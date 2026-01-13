@@ -1,0 +1,47 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.bin/
+.dist/
+server
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.html
+
+# Dependencies
+vendor/
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*
+
+# Data cache (runtime generated)
+.data/
+
+# Process Compose
+.pc.log
+.pc.sock
+
+# Generated HTML (keep testdata)
+*.html
+!testdata/*.html

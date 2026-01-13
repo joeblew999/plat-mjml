@@ -1,0 +1,127 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{.Subject}}</mj-title>
+    <mj-preview>{{.PreviewText}}</mj-preview>
+    {{if .FontCSS}}
+    <mj-style>
+      {{.FontCSS}}
+    </mj-style>
+    {{end}}
+    <mj-attributes>
+      <mj-all font-family="{{if .FontStack}}{{.FontStack}}{{else}}Arial, Helvetica, sans-serif{{end}}" />
+      <mj-text color="#333333" font-size="16px" line-height="1.6" />
+      <mj-button font-family="{{if .FontStack}}{{.FontStack}}{{else}}Arial, Helvetica, sans-serif{{end}}" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f8f9fa">
+    <!-- Header -->
+    <mj-section background-color="#ffffff" padding="30px 20px">
+      <mj-column>
+        {{if .CompanyLogo}}
+        <mj-image src="{{.CompanyLogo}}" alt="{{.CompanyName}}" width="180px" />
+        {{end}}
+        <mj-text align="center" font-size="32px" font-weight="700" color="#1a202c" padding-top="20px">
+          {{.Title}}
+        </mj-text>
+        {{if .Subtitle}}
+        <mj-text align="center" font-size="18px" color="#718096" font-weight="400">
+          {{.Subtitle}}
+        </mj-text>
+        {{end}}
+      </mj-column>
+    </mj-section>
+    
+    <!-- Hero Section -->
+    {{if .HeroImage}}
+    <mj-section background-color="#ffffff" padding="0px">
+      <mj-column>
+        <mj-image src="{{.HeroImage}}" alt="{{.HeroImageAlt}}" />
+      </mj-column>
+    </mj-section>
+    {{end}}
+    
+    <!-- Main Content -->
+    <mj-section background-color="#ffffff" padding="40px 20px">
+      <mj-column>
+        {{if .Greeting}}
+        <mj-text font-size="20px" font-weight="600" color="#1a202c">
+          {{.Greeting}}
+        </mj-text>
+        {{end}}
+        
+        {{range .ContentBlocks}}
+        <mj-text font-size="16px" line-height="1.7" color="#4a5568" padding-bottom="20px">
+          {{.}}
+        </mj-text>
+        {{end}}
+        
+        {{if .CallToActionURL}}
+        <mj-button 
+          background-color="#4299e1" 
+          color="#ffffff" 
+          href="{{.CallToActionURL}}"
+          border-radius="6px"
+          font-size="16px"
+          font-weight="600"
+          padding="12px 30px">
+          {{if .CallToActionText}}{{.CallToActionText}}{{else}}Learn More{{end}}
+        </mj-button>
+        {{end}}
+      </mj-column>
+    </mj-section>
+    
+    <!-- Featured Section -->
+    {{if .FeaturedContent}}
+    <mj-section background-color="#edf2f7" padding="30px 20px">
+      <mj-column>
+        <mj-text align="center" font-size="24px" font-weight="600" color="#1a202c" padding-bottom="20px">
+          {{if .FeaturedTitle}}{{.FeaturedTitle}}{{else}}Featured{{end}}
+        </mj-text>
+        {{range .FeaturedContent}}
+        <mj-text font-size="16px" line-height="1.6" color="#4a5568" padding-bottom="15px">
+          <strong>{{.Title}}</strong><br/>
+          {{.Description}}
+          {{if .URL}}<br/><a href="{{.URL}}" style="color: #4299e1; text-decoration: none;">Read more →</a>{{end}}
+        </mj-text>
+        {{end}}
+      </mj-column>
+    </mj-section>
+    {{end}}
+    
+    <!-- Social Links -->
+    {{if .SocialLinks}}
+    <mj-section background-color="#ffffff" padding="30px 20px">
+      <mj-column>
+        <mj-text align="center" font-size="18px" font-weight="600" color="#1a202c" padding-bottom="20px">
+          Follow Us
+        </mj-text>
+        <mj-social font-size="15px" icon-size="30px" mode="horizontal" padding="0px" align="center">
+          {{range .SocialLinks}}
+          <mj-social-element name="{{.Platform}}" href="{{.URL}}">
+          </mj-social-element>
+          {{end}}
+        </mj-social>
+      </mj-column>
+    </mj-section>
+    {{end}}
+    
+    <!-- Footer -->
+    <mj-section background-color="#f7fafc" padding="30px 20px">
+      <mj-column>
+        <mj-text align="center" font-size="14px" color="#718096" padding-bottom="10px">
+          © {{.Timestamp.Year}} {{.CompanyName}}. All rights reserved.
+        </mj-text>
+        {{if .CompanyAddress}}
+        <mj-text align="center" font-size="12px" color="#a0aec0">
+          {{.CompanyAddress}}
+        </mj-text>
+        {{end}}
+        {{if .UnsubscribeURL}}
+        <mj-text align="center" font-size="12px" padding-top="15px">
+          <a href="{{.UnsubscribeURL}}" style="color: #a0aec0; text-decoration: underline;">Unsubscribe</a>
+        </mj-text>
+        {{end}}
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

@@ -1,0 +1,12 @@
+{
+  "roboto-400-normal-ttf": {
+    "Family": "Roboto",
+    "Weight": 400,
+    "Style": "normal",
+    "Format": "ttf",
+    "Path": "/Users/apple/workspace/go/src/github.com/joeblew999/plat-mjml/pkg/mjml/data/fonts/Roboto/400.ttf",
+    "Size": 0,
+    "Version": "latest",
+    "Source": "google"
+  }
+}

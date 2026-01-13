@@ -1,0 +1,42 @@
+{
+  "inter-400-normal-ttf": {
+    "Family": "Inter",
+    "Weight": 400,
+    "Style": "normal",
+    "Format": "ttf",
+    "Path": "/Users/apple/workspace/go/src/github.com/joeblew999/plat-mjml/pkg/font/data/fonts/Inter/400.ttf",
+    "Size": 0,
+    "Version": "latest",
+    "Source": "google"
+  },
+  "lato-400-normal-ttf": {
+    "Family": "Lato",
+    "Weight": 400,
+    "Style": "normal",
+    "Format": "ttf",
+    "Path": "/Users/apple/workspace/go/src/github.com/joeblew999/plat-mjml/pkg/font/data/fonts/Lato/400.ttf",
+    "Size": 0,
+    "Version": "latest",
+    "Source": "google"
+  },
+  "open sans-400-normal-ttf": {
+    "Family": "Open Sans",
+    "Weight": 400,
+    "Style": "normal",
+    "Format": "ttf",
+    "Path": "/Users/apple/workspace/go/src/github.com/joeblew999/plat-mjml/pkg/font/data/fonts/Open Sans/400.ttf",
+    "Size": 0,
+    "Version": "latest",
+    "Source": "google"
+  },
+  "roboto-400-normal-ttf": {
+    "Family": "Roboto",
+    "Weight": 400,
+    "Style": "normal",
+    "Format": "ttf",
+    "Path": "/Users/apple/workspace/go/src/github.com/joeblew999/plat-mjml/pkg/font/data/fonts/Roboto/400.ttf",
+    "Size": 0,
+    "Version": "latest",
+    "Source": "google"
+  }
+}

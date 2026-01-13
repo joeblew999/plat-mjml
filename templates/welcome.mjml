@@ -1,0 +1,59 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{.Subject}}</mj-title>
+    <mj-preview>Welcome to {{.CompanyName}}!</mj-preview>
+    <mj-attributes>
+      <mj-all font-family="Arial, sans-serif" />
+      <mj-text color="#333333" font-size="16px" line-height="1.6" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f4">
+    <!-- Header -->
+    <mj-section background-color="#ffffff" padding="20px">
+      <mj-column>
+        {{if .CompanyLogo}}
+        <mj-image src="{{.CompanyLogo}}" alt="{{.CompanyName}}" width="200px" />
+        {{end}}
+        <mj-text align="center" font-size="24px" font-weight="bold" color="#2c3e50">
+          Welcome to {{.CompanyName}}!
+        </mj-text>
+      </mj-column>
+    </mj-section>
+    
+    <!-- Content -->
+    <mj-section background-color="#ffffff" padding="20px">
+      <mj-column>
+        <mj-text font-size="18px" color="#2c3e50">
+          Hi {{.Name}},
+        </mj-text>
+        <mj-text>
+          {{.Message}}
+        </mj-text>
+        {{if .ActivationURL}}
+        <mj-button background-color="#3498db" color="#ffffff" href="{{.ActivationURL}}">
+          {{if .ButtonText}}{{.ButtonText}}{{else}}Activate Account{{end}}
+        </mj-button>
+        {{end}}
+        {{if .LoginURL}}
+        <mj-text align="center">
+          <a href="{{.LoginURL}}" style="color: #3498db;">Or log in here</a>
+        </mj-text>
+        {{end}}
+      </mj-column>
+    </mj-section>
+    
+    <!-- Footer -->
+    <mj-section background-color="#ecf0f1" padding="20px">
+      <mj-column>
+        <mj-text align="center" font-size="12px" color="#7f8c8d">
+          © {{.Timestamp.Year}} {{.CompanyName}}. All rights reserved.
+        </mj-text>
+        {{if .CompanyURL}}
+        <mj-text align="center" font-size="12px">
+          <a href="{{.CompanyURL}}" style="color: #3498db;">Visit our website</a>
+        </mj-text>
+        {{end}}
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

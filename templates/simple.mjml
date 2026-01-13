@@ -1,0 +1,33 @@
+<mjml>
+  <mj-head>
+    <mj-title>{{.Subject}}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="Arial, sans-serif" />
+      <mj-text color="#333333" font-size="16px" line-height="1.6" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f4">
+    <mj-section background-color="#ffffff" padding="40px">
+      <mj-column>
+        {{if .Title}}
+        <mj-text align="center" font-size="24px" font-weight="bold" color="#2c3e50">
+          {{.Title}}
+        </mj-text>
+        {{end}}
+        {{if .Name}}
+        <mj-text font-size="18px" color="#2c3e50">
+          Hi {{.Name}},
+        </mj-text>
+        {{end}}
+        <mj-text>
+          {{.Message}}
+        </mj-text>
+        {{if .ButtonURL}}
+        <mj-button background-color="#3498db" color="#ffffff" href="{{.ButtonURL}}">
+          {{if .ButtonText}}{{.ButtonText}}{{else}}Click Here{{end}}
+        </mj-button>
+        {{end}}
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>
