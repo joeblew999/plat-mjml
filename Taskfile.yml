@@ -5,8 +5,22 @@ dotenv:
 
 vars:
   DATA_DIR: '{{.ROOT_DIR}}/.data'
+  BIN_DIR: '{{.ROOT_DIR}}/.bin'
 
 tasks:
+  # Build
+  build:
+    desc: Build server binary
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_DIR}}/server ./cmd/server
+
+  build:cli:
+    desc: Build CLI binary
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_DIR}}/plat-mjml .
+
   # Setup
   deps:
     desc: Install dependencies and tools
