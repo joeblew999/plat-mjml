@@ -82,3 +82,11 @@ tasks:
     desc: Clean data cache directory
     cmds:
       - rm -rf {{.DATA_DIR}}
+
+  # Port management
+  kill:ports:
+    desc: Kill processes on server ports (8080, 8081)
+    cmds:
+      - lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+      - lsof -ti:8081 | xargs kill -9 2>/dev/null || true
+      - echo "Ports 8080 and 8081 cleared"
