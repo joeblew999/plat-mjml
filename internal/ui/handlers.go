@@ -3,10 +3,12 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
+	"github.com/starfederation/datastar-go/datastar"
 )
 
 // Handlers provides HTTP handlers for the UI.
@@ -63,12 +65,11 @@ func (h *Handlers) handleSendPage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.queue.Stats(context.Background())
 	if err != nil {
-		h.sendDatastarError(w, err)
+		h.sendDatastarError(w, r, err)
 		return
 	}
 
-	// Send Datastar signal merge
-	h.sendDatastarSignals(w, map[string]any{
+	h.sendDatastarSignals(w, r, map[string]any{
 		"stats":   stats,
 		"loading": false,
 	})
@@ -79,11 +80,11 @@ func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 
 	jobs, err := h.queue.List(context.Background(), status, 50)
 	if err != nil {
-		h.sendDatastarError(w, err)
+		h.sendDatastarError(w, r, err)
 		return
 	}
 
-	h.sendDatastarSignals(w, map[string]any{
+	h.sendDatastarSignals(w, r, map[string]any{
 		"jobs":    jobs,
 		"loading": false,
 	})
@@ -92,7 +93,7 @@ func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) handlePreview(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if slug == "" {
-		h.sendDatastarError(w, nil)
+		h.sendDatastarError(w, r, nil)
 		return
 	}
 
@@ -105,11 +106,11 @@ func (h *Handlers) handlePreview(w http.ResponseWriter, r *http.Request) {
 
 	html, err := h.renderer.RenderTemplate(slug, data)
 	if err != nil {
-		h.sendDatastarError(w, err)
+		h.sendDatastarError(w, r, err)
 		return
 	}
 
-	h.sendDatastarSignals(w, map[string]any{
+	h.sendDatastarSignals(w, r, map[string]any{
 		"previewHtml": html,
 		"loading":     false,
 	})
@@ -124,7 +125,7 @@ func (h *Handlers) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.sendDatastarSignals(w, map[string]any{
+		h.sendDatastarSignals(w, r, map[string]any{
 			"sending": false,
 			"result":  "Error: Invalid request",
 		})
@@ -141,14 +142,14 @@ func (h *Handlers) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.queue.Enqueue(context.Background(), job)
 	if err != nil {
-		h.sendDatastarSignals(w, map[string]any{
+		h.sendDatastarSignals(w, r, map[string]any{
 			"sending": false,
 			"result":  "Error: " + err.Error(),
 		})
 		return
 	}
 
-	h.sendDatastarSignals(w, map[string]any{
+	h.sendDatastarSignals(w, r, map[string]any{
 		"sending": false,
 		"result":  "Email queued with ID: " + id,
 	})
@@ -166,34 +167,19 @@ func (h *Handlers) getTemplateInfos() []TemplateInfo {
 	return infos
 }
 
-func (h *Handlers) sendDatastarSignals(w http.ResponseWriter, signals map[string]any) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	data, err := json.Marshal(signals)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	// Datastar expects SSE format with signal merge
-	w.Write([]byte("event: datastar-merge-signals\n"))
-	w.Write([]byte("data: "))
-	w.Write(data)
-	w.Write([]byte("\n\n"))
-
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+func (h *Handlers) sendDatastarSignals(w http.ResponseWriter, r *http.Request, signals map[string]any) {
+	sse := datastar.NewSSE(w, r)
+	if err := sse.MarshalAndPatchSignals(signals); err != nil {
+		log.Printf("datastar patch signals: %v", err)
 	}
 }
 
-func (h *Handlers) sendDatastarError(w http.ResponseWriter, err error) {
+func (h *Handlers) sendDatastarError(w http.ResponseWriter, r *http.Request, err error) {
 	msg := "Unknown error"
 	if err != nil {
 		msg = err.Error()
 	}
-	h.sendDatastarSignals(w, map[string]any{
+	h.sendDatastarSignals(w, r, map[string]any{
 		"loading": false,
 		"error":   msg,
 	})

@@ -20,7 +20,7 @@ func ValidateHTML(htmlContent string) []string {
 		issues = append(issues, "Missing Outlook conditional comments")
 	}
 
-	if !strings.Contains(htmlContent, "border-collapse: collapse") {
+	if !strings.Contains(htmlContent, "border-collapse:collapse") && !strings.Contains(htmlContent, "border-collapse: collapse") {
 		issues = append(issues, "Missing border-collapse for table compatibility")
 	}
 

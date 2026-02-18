@@ -72,6 +72,11 @@ tasks:
       - go run ./cmd/server
 
   # Development
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
   generate:
     desc: Generate code (templ, goctl)
     cmds:

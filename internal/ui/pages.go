@@ -18,7 +18,7 @@ func Layout(title string, content ...g.Node) g.Node {
 			h.Meta(h.Charset("utf-8")),
 			h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
 			h.TitleEl(g.Text(title)),
-			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.6/bundles/datastar.js")),
+			h.Script(h.Type("module"), h.Src("https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.7/bundles/datastar.js")),
 			h.StyleEl(h.Type("text/css"), g.Raw(styles)),
 		),
 		h.Body(
