@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/joeblew999/plat-mjml/pkg/config"
-	"github.com/joeblew999/plat-mjml/pkg/log"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // Service provides email template rendering capabilities for the infrastructure
@@ -42,7 +42,7 @@ func NewServiceWithOptions(templateDir string, opts ...RendererOption) *Service 
 
 // Start initializes the MJML service and loads templates
 func (s *Service) Start() error {
-	log.Info("Starting MJML email service", "template_dir", s.templateDir)
+	logx.Infow("Starting MJML email service", logx.Field("template_dir", s.templateDir))
 	
 	// Load templates from directory
 	if err := s.renderer.LoadTemplatesFromDir(s.templateDir); err != nil {
@@ -50,14 +50,14 @@ func (s *Service) Start() error {
 	}
 	
 	templates := s.renderer.ListTemplates()
-	log.Info("MJML service started", "templates_loaded", len(templates), "templates", templates)
+	logx.Infow("MJML service started", logx.Field("templates_loaded", len(templates)), logx.Field("templates", templates))
 	
 	return nil
 }
 
 // Stop gracefully shuts down the MJML service
 func (s *Service) Stop() error {
-	log.Info("Stopping MJML email service")
+	logx.Info("Stopping MJML email service")
 	s.renderer.ClearCache()
 	return nil
 }
@@ -66,11 +66,11 @@ func (s *Service) Stop() error {
 func (s *Service) RenderEmail(templateName string, data any) (string, error) {
 	html, err := s.renderer.RenderTemplate(templateName, data)
 	if err != nil {
-		log.Error("Failed to render email template", "template", templateName, "error", err)
+		logx.Errorw("Failed to render email template", logx.Field("template", templateName), logx.Field("error", err))
 		return "", fmt.Errorf("failed to render email template %s: %w", templateName, err)
 	}
 	
-	log.Debug("Email template rendered successfully", "template", templateName, "html_size", len(html))
+	logx.Debugw("Email template rendered successfully", logx.Field("template", templateName), logx.Field("html_size", len(html)))
 	return html, nil
 }
 
@@ -78,33 +78,33 @@ func (s *Service) RenderEmail(templateName string, data any) (string, error) {
 func (s *Service) RenderEmailString(mjmlContent string) (string, error) {
 	html, err := s.renderer.RenderString(mjmlContent)
 	if err != nil {
-		log.Error("Failed to render MJML string", "error", err)
+		logx.Errorw("Failed to render MJML string", logx.Field("error", err))
 		return "", fmt.Errorf("failed to render MJML string: %w", err)
 	}
 	
-	log.Debug("MJML string rendered successfully", "html_size", len(html))
+	logx.Debugw("MJML string rendered successfully", logx.Field("html_size", len(html)))
 	return html, nil
 }
 
 // LoadTemplate loads a new template into the service
 func (s *Service) LoadTemplate(name, content string) error {
 	if err := s.renderer.LoadTemplate(name, content); err != nil {
-		log.Error("Failed to load template", "name", name, "error", err)
+		logx.Errorw("Failed to load template", logx.Field("name", name), logx.Field("error", err))
 		return fmt.Errorf("failed to load template %s: %w", name, err)
 	}
 	
-	log.Info("Template loaded successfully", "name", name)
+	logx.Infow("Template loaded successfully", logx.Field("name", name))
 	return nil
 }
 
 // LoadTemplateFromFile loads a template from a file
 func (s *Service) LoadTemplateFromFile(name, filePath string) error {
 	if err := s.renderer.LoadTemplateFromFile(name, filePath); err != nil {
-		log.Error("Failed to load template from file", "name", name, "file", filePath, "error", err)
+		logx.Errorw("Failed to load template from file", logx.Field("name", name), logx.Field("file", filePath), logx.Field("error", err))
 		return fmt.Errorf("failed to load template %s from file %s: %w", name, filePath, err)
 	}
 	
-	log.Info("Template loaded from file", "name", name, "file", filePath)
+	logx.Infow("Template loaded from file", logx.Field("name", name), logx.Field("file", filePath))
 	return nil
 }
 
@@ -112,16 +112,16 @@ func (s *Service) LoadTemplateFromFile(name, filePath string) error {
 // It clears and reloads atomically under a single lock to avoid serving
 // requests while templates are partially loaded.
 func (s *Service) ReloadTemplates() error {
-	log.Info("Reloading templates", "dir", s.templateDir)
+	logx.Infow("Reloading templates", logx.Field("dir", s.templateDir))
 
 	// Clear and reload atomically
 	if err := s.renderer.ReplaceTemplatesFromDir(s.templateDir); err != nil {
-		log.Error("Failed to reload templates", "error", err)
+		logx.Errorw("Failed to reload templates", logx.Field("error", err))
 		return fmt.Errorf("failed to reload templates: %w", err)
 	}
 
 	newTemplates := s.renderer.ListTemplates()
-	log.Info("Templates reloaded", "count", len(newTemplates), "templates", newTemplates)
+	logx.Infow("Templates reloaded", logx.Field("count", len(newTemplates)), logx.Field("templates", newTemplates))
 
 	return nil
 }

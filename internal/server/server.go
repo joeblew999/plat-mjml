@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/joeblew999/plat-mjml/internal/ui"
@@ -12,18 +11,17 @@ import (
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
 	gomjml "github.com/preslavrachev/gomjml/mjml"
+	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/proc"
+	"github.com/zeromicro/go-zero/core/service"
 	"github.com/zeromicro/go-zero/mcp"
+	"github.com/zeromicro/go-zero/rest"
 )
 
 // Server wraps the MCP server and email platform services.
 type Server struct {
-	config   Config
-	mcp      mcp.McpServer
-	renderer *mjml.Renderer
-	db       *db.DB
-	queue    *queue.Queue
-	delivery *delivery.Engine
-	ui       *ui.Handlers
+	config Config
+	group  *service.ServiceGroup
 }
 
 // New creates a new server instance.
@@ -76,60 +74,52 @@ func New(c Config) (*Server, error) {
 	smtpConfig := mail.GmailConfig()
 	deliveryEngine := delivery.NewEngine(emailQueue, renderer, smtpConfig, deliveryConfig)
 
-	// Create UI handlers
-	uiHandlers := ui.NewHandlers(renderer, emailQueue)
-
-	s := &Server{
-		config:   c,
-		mcp:      mcpServer,
-		renderer: renderer,
-		db:       database,
-		queue:    emailQueue,
-		delivery: deliveryEngine,
-		ui:       uiHandlers,
-	}
-
 	// Register MCP tools
 	RegisterMCPTools(mcpServer, renderer, emailQueue)
 
-	return s, nil
+	// Create UI rest server
+	uiServer, err := rest.NewServer(c.UI.RestConf)
+	if err != nil {
+		database.Close()
+		return nil, fmt.Errorf("failed to create UI server: %w", err)
+	}
+
+	uiHandlers := ui.NewHandlers(renderer, emailQueue)
+	uiServer.AddRoutes(uiHandlers.Routes())
+	uiServer.AddRoutes(uiHandlers.SSERoutes(), rest.WithSSE())
+
+	// Register cleanup via proc shutdown listeners
+	proc.AddShutdownListener(func() {
+		logx.Info("Closing database")
+		database.Close()
+	})
+	proc.AddShutdownListener(func() {
+		gomjml.StopASTCacheCleanup()
+	})
+
+	// Build service group: delivery + UI + MCP (stopped in reverse order)
+	group := service.NewServiceGroup()
+	group.Add(newDeliveryService(deliveryEngine, 2))
+	group.Add(uiServer)
+	group.Add(mcpServer)
+
+	logx.Infow("plat-mjml server configured",
+		logx.Field("mcp", fmt.Sprintf("http://%s:%d/sse", c.Host, c.Port)),
+		logx.Field("ui", fmt.Sprintf("http://%s:%d", c.UI.Host, c.UI.Port)),
+		logx.Field("templates", c.Templates.Dir),
+		logx.Field("database", c.Database.Path),
+	)
+	logx.Infof("To add to Claude: claude mcp add plat-mjml -- npx -y mcp-remote http://localhost:%d/sse", c.Port)
+
+	return &Server{config: c, group: group}, nil
 }
 
-// Start starts the server.
+// Start starts all services. Blocks until shutdown signal.
 func (s *Server) Start() {
-	uiPort := s.config.Port + 1
-	fmt.Printf("Starting plat-mjml server on %s:%d\n", s.config.Host, s.config.Port)
-	fmt.Printf("MCP endpoint: http://%s:%d/sse\n", s.config.Host, s.config.Port)
-	fmt.Printf("Web UI: http://%s:%d/\n", s.config.Host, uiPort)
-	fmt.Printf("Templates loaded from: %s\n", s.config.Templates.Dir)
-	fmt.Printf("Database: %s\n", s.config.Database.Path)
-	fmt.Println()
-	fmt.Println("To add to Claude:")
-	fmt.Printf("  claude mcp add plat-mjml -- npx -y mcp-remote http://localhost:%d/sse\n", s.config.Port)
-
-	// Start delivery workers
-	s.delivery.Start(2)
-
-	// Start UI server on a separate port
-	// uiPort already declared above for log message
-	mux := http.NewServeMux()
-	s.ui.RegisterRoutes(mux)
-
-	go func() {
-		addr := fmt.Sprintf("%s:%d", s.config.Host, uiPort)
-		fmt.Printf("\nWeb UI running at http://%s\n", addr)
-		if err := http.ListenAndServe(addr, mux); err != nil {
-			fmt.Printf("UI server error: %v\n", err)
-		}
-	}()
-
-	s.mcp.Start()
+	s.group.Start()
 }
 
-// Stop stops the server.
+// Stop stops all services.
 func (s *Server) Stop() {
-	s.delivery.Stop()
-	s.mcp.Stop()
-	s.db.Close()
-	gomjml.StopASTCacheCleanup()
+	s.group.Stop()
 }

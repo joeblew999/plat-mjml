@@ -1,17 +1,18 @@
 package ui
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"html"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
 	"github.com/starfederation/datastar-go/datastar"
+	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/rest"
+	"github.com/zeromicro/go-zero/rest/pathvar"
 )
 
 // Handlers provides HTTP handlers for the UI.
@@ -28,25 +29,30 @@ func NewHandlers(renderer *mjml.Renderer, q *queue.Queue) *Handlers {
 	}
 }
 
-// RegisterRoutes registers all UI routes.
-func (h *Handlers) RegisterRoutes(mux *http.ServeMux) {
-	// Pages
-	mux.HandleFunc("GET /", h.handleDashboard)
-	mux.HandleFunc("GET /templates", h.handleTemplates)
-	mux.HandleFunc("GET /queue", h.handleQueue)
-	mux.HandleFunc("GET /send", h.handleSendPage)
+// Routes returns the standard UI routes for registration with rest.Server.
+func (h *Handlers) Routes() []rest.Route {
+	return []rest.Route{
+		{Method: http.MethodGet, Path: "/", Handler: h.handleDashboard},
+		{Method: http.MethodGet, Path: "/templates", Handler: h.handleTemplates},
+		{Method: http.MethodGet, Path: "/queue", Handler: h.handleQueue},
+		{Method: http.MethodGet, Path: "/send", Handler: h.handleSendPage},
+		{Method: http.MethodPost, Path: "/api/send", Handler: h.handleSend},
+	}
+}
 
-	// API endpoints for Datastar
-	mux.HandleFunc("GET /api/stats", h.handleStats)
-	mux.HandleFunc("GET /api/queue", h.handleQueueAPI)
-	mux.HandleFunc("GET /api/preview/{slug}", h.handlePreview)
-	mux.HandleFunc("POST /api/send", h.handleSend)
+// SSERoutes returns the SSE-based API routes (require rest.WithSSE option).
+func (h *Handlers) SSERoutes() []rest.Route {
+	return []rest.Route{
+		{Method: http.MethodGet, Path: "/api/stats", Handler: h.handleStats},
+		{Method: http.MethodGet, Path: "/api/queue", Handler: h.handleQueueAPI},
+		{Method: http.MethodGet, Path: "/api/preview/:slug", Handler: h.handlePreview},
+	}
 }
 
 func (h *Handlers) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := Dashboard().Render(w); err != nil {
-		log.Printf("render dashboard: %v", err)
+		logx.Errorf("render dashboard: %v", err)
 	}
 }
 
@@ -54,14 +60,14 @@ func (h *Handlers) handleTemplates(w http.ResponseWriter, r *http.Request) {
 	templates := h.getTemplateInfos()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := TemplatesPage(templates).Render(w); err != nil {
-		log.Printf("render templates page: %v", err)
+		logx.Errorf("render templates page: %v", err)
 	}
 }
 
 func (h *Handlers) handleQueue(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := QueuePage().Render(w); err != nil {
-		log.Printf("render queue page: %v", err)
+		logx.Errorf("render queue page: %v", err)
 	}
 }
 
@@ -69,12 +75,12 @@ func (h *Handlers) handleSendPage(w http.ResponseWriter, r *http.Request) {
 	templates := h.getTemplateInfos()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := SendEmailPage(templates).Render(w); err != nil {
-		log.Printf("render send page: %v", err)
+		logx.Errorf("render send page: %v", err)
 	}
 }
 
 func (h *Handlers) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.queue.Stats(context.Background())
+	stats, err := h.queue.Stats(r.Context())
 	if err != nil {
 		h.sendDatastarError(w, r, err)
 		return
@@ -89,7 +95,7 @@ func (h *Handlers) handleStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 
-	jobs, err := h.queue.List(context.Background(), status, 50)
+	jobs, err := h.queue.List(r.Context(), status, 50)
 	if err != nil {
 		h.sendDatastarError(w, r, err)
 		return
@@ -100,16 +106,16 @@ func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 
 	fragment := renderQueueItems(jobs)
 	if err := sse.PatchElementf(`<div id="queue-items">%s</div>`, fragment); err != nil {
-		log.Printf("datastar patch queue items: %v", err)
+		logx.Errorf("datastar patch queue items: %v", err)
 	}
 
 	if err := sse.MarshalAndPatchSignals(map[string]any{"loading": false}); err != nil {
-		log.Printf("datastar patch signals: %v", err)
+		logx.Errorf("datastar patch signals: %v", err)
 	}
 }
 
 func (h *Handlers) handlePreview(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
+	slug := pathvar.Vars(r)["slug"]
 	if slug == "" {
 		h.sendDatastarError(w, r, nil)
 		return
@@ -158,7 +164,7 @@ func (h *Handlers) handleSend(w http.ResponseWriter, r *http.Request) {
 		Priority:     queue.PriorityNormal,
 	}
 
-	id, err := h.queue.Enqueue(context.Background(), job)
+	id, err := h.queue.Enqueue(r.Context(), job)
 	if err != nil {
 		h.sendDatastarSignals(w, r, map[string]any{
 			"sending": false,
@@ -188,7 +194,7 @@ func (h *Handlers) getTemplateInfos() []TemplateInfo {
 func (h *Handlers) sendDatastarSignals(w http.ResponseWriter, r *http.Request, signals map[string]any) {
 	sse := datastar.NewSSE(w, r)
 	if err := sse.MarshalAndPatchSignals(signals); err != nil {
-		log.Printf("datastar patch signals: %v", err)
+		logx.Errorf("datastar patch signals: %v", err)
 	}
 }
 

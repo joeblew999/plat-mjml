@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"time"
 
@@ -15,26 +14,19 @@ func main() {
 	configFile := flag.String("f", "config.yaml", "config file path")
 	flag.Parse()
 
-	// Disable go-zero's stat logging
 	logx.DisableStat()
 
 	var c server.Config
 	if err := conf.Load(*configFile, &c); err != nil {
-		// If config file doesn't exist, use defaults
 		if os.IsNotExist(err) {
 			c = defaultConfig()
 		} else {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
+			logx.Must(err)
 		}
 	}
 
 	s, err := server.New(c)
-	if err != nil {
-		fmt.Printf("Error creating server: %v\n", err)
-		os.Exit(1)
-	}
-	defer s.Stop()
+	logx.Must(err)
 
 	s.Start()
 }
@@ -47,6 +39,9 @@ func defaultConfig() server.Config {
 	c.Mcp.Name = "mjml-server"
 	c.Mcp.Version = "1.0.0"
 	c.Mcp.MessageTimeout = 30 * time.Second
+	c.UI.Host = "0.0.0.0"
+	c.UI.Port = 8081
+	c.UI.Name = "plat-mjml-ui"
 	c.Templates = server.TemplatesConfig{Dir: "./templates"}
 	c.Database = server.DatabaseConfig{Path: "./.data/plat-mjml.db"}
 	c.Delivery = server.DeliveryConfig{

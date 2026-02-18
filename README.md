@@ -15,7 +15,7 @@ MJML email template platform with MCP integration for AI assistants.
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.25+
 - [Task](https://taskfile.dev) (optional, for convenience commands)
 
 ### 1. Start the Server
@@ -148,8 +148,8 @@ Or with Task:
 
 ```bash
 task list
-task render TEMPLATE=welcome OUT=.data/welcome.html
-task validate FILE=.data/welcome.html
+task render TEMPLATE=welcome OUT=./.data/welcome.html
+task validate FILE=./.data/welcome.html
 task send TO=test@example.com FILE=.data/welcome.html
 ```
 
@@ -199,8 +199,7 @@ html, err := renderer.RenderTemplate("welcome", map[string]any{
 │   ├── db/              # SQLite (auto-migrating)
 │   ├── queue/           # Email queue (goqite)
 │   ├── delivery/        # Delivery engine with retry/backoff
-│   ├── config/          # Path configuration
-│   └── log/             # Structured logging
+│   └── config/          # Path configuration
 ├── templates/           # MJML email templates
 ├── config.yaml          # Server configuration
 └── docs/                # ADRs, screenshots
@@ -213,6 +212,11 @@ html, err := renderer.RenderTemplate("welcome", map[string]any{
 name: plat-mjml
 host: 0.0.0.0
 port: 8080
+
+ui:
+  name: plat-mjml-ui
+  host: 0.0.0.0
+  port: 8081
 
 mcp:
   name: mjml-server
@@ -263,6 +267,6 @@ See [ADR-001](docs/adr/001-email-platform-architecture.md) for detailed architec
 ## Acknowledgements
 
 - [gomjml](https://github.com/preslavrachev/gomjml) by [Preslav Rachev](https://github.com/preslavrachev) — Pure Go MJML renderer. No Node.js required.
-- [go-zero](https://github.com/zeromicro/go-zero) by [Kevin Wan](https://github.com/kevwan) — Cloud-native Go microservices framework for MCP server.
+- [go-zero](https://github.com/zeromicro/go-zero) by [Kevin Wan](https://github.com/kevwan) — Cloud-native Go microservices framework. Powers MCP server, Web UI (rest.Server), service lifecycle (ServiceGroup), graceful shutdown, and structured logging (logx).
 - [goqite](https://maragu.dev/goqite) by [Markus Wüstenberg](https://github.com/maragudk) — SQLite-backed persistent message queue.
 - [gomponents](https://maragu.dev/gomponents) + [gomponents-datastar](https://maragu.dev/gomponents-datastar) — Go HTML components with Datastar integration.

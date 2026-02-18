@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/joeblew999/plat-mjml/pkg/config"
-	"github.com/joeblew999/plat-mjml/pkg/log"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // Font represents a font with family, weight, and style
@@ -135,7 +135,7 @@ func (m *Manager) cacheFont(font Font) (string, error) {
 
 	// Register in registry with CDN URL
 	if err := m.registerFont(font, path, cdnURL); err != nil {
-		log.Warn("Failed to register font", "error", err)
+		logx.Infow("Failed to register font", logx.Field("error", err))
 	}
 
 	return path, nil

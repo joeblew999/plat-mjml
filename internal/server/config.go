@@ -1,14 +1,23 @@
 package server
 
-import "github.com/zeromicro/go-zero/mcp"
+import (
+	"github.com/zeromicro/go-zero/mcp"
+	"github.com/zeromicro/go-zero/rest"
+)
 
 // Config holds the server configuration.
 type Config struct {
 	mcp.McpConf
 
+	UI        UIConfig        `json:",optional"`
 	Templates TemplatesConfig `json:",optional"`
 	Database  DatabaseConfig  `json:",optional"`
 	Delivery  DeliveryConfig  `json:",optional"`
+}
+
+// UIConfig holds the Web UI server settings.
+type UIConfig struct {
+	rest.RestConf
 }
 
 // TemplatesConfig holds template directory settings.

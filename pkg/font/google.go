@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/joeblew999/plat-mjml/pkg/log"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // Uses GoogleFontsAPI from consts.go
@@ -21,7 +21,7 @@ func downloadGoogleFont(font Font, path string) (cdnURL string, err error) {
 		if url, dlErr := tryDirectTTFDownload(font, path); dlErr == nil {
 			return url, nil
 		}
-		log.Warn("Direct TTF API failed, trying CSS method", "family", font.Family)
+		logx.Infow("Direct TTF API failed, trying CSS method", logx.Field("family", font.Family))
 	}
 
 	// Fallback to CSS method
@@ -34,7 +34,7 @@ func tryDirectTTFDownload(font Font, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Info("Using direct TTF URL", "family", font.Family, "url", fontURL)
+	logx.Infow("Using direct TTF URL", logx.Field("family", font.Family), logx.Field("url", fontURL))
 	return fontURL, downloadFontFile(fontURL, path)
 }
 
@@ -43,7 +43,7 @@ func tryCSSDownload(font Font, path string) (string, error) {
 	cssURL := buildGoogleFontsURL(font)
 	fontURL, err := getFontURL(cssURL, font.Format)
 	if err != nil {
-		log.Warn("Failed to get font from CSS, using mock", "family", font.Family, "error", err)
+		logx.Infow("Failed to get font from CSS, using mock", logx.Field("family", font.Family), logx.Field("error", err))
 		return "", createMockFontFile(path, font)
 	}
 	return fontURL, downloadFontFile(fontURL, path)

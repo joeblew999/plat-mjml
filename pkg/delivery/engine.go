@@ -12,6 +12,7 @@ import (
 	"github.com/joeblew999/plat-mjml/pkg/mail"
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
+	"github.com/zeromicro/go-zero/core/logx"
 	"golang.org/x/time/rate"
 	"maragu.dev/goqite"
 )
@@ -67,6 +68,7 @@ func NewEngine(q *queue.Queue, r *mjml.Renderer, smtp mail.Config, cfg Config) *
 
 // Start starts the delivery engine with the specified number of workers.
 func (e *Engine) Start(workers int) {
+	logx.Infow("Delivery engine started", logx.Field("workers", workers))
 	for i := 0; i < workers; i++ {
 		e.wg.Add(1)
 		go e.worker(i)
@@ -75,8 +77,10 @@ func (e *Engine) Start(workers int) {
 
 // Stop gracefully stops the delivery engine.
 func (e *Engine) Stop() {
+	logx.Info("Delivery engine stopping, waiting for workers")
 	e.cancel()
 	e.wg.Wait()
+	logx.Info("Delivery engine stopped")
 }
 
 func (e *Engine) worker(id int) {
@@ -104,6 +108,12 @@ func (e *Engine) worker(id int) {
 
 func (e *Engine) processJob(job *queue.EmailJob, msg *goqite.Message) {
 	ctx := e.ctx
+
+	logx.Infow("Processing email",
+		logx.Field("id", job.ID),
+		logx.Field("template", job.TemplateSlug),
+		logx.Field("recipients", job.Recipients),
+	)
 
 	// Update status to processing
 	e.queue.UpdateStatus(ctx, job.ID, "processing", nil)
@@ -137,6 +147,12 @@ func (e *Engine) processJob(job *queue.EmailJob, msg *goqite.Message) {
 	// Success - mark as sent and delete from queue
 	e.queue.MarkSent(ctx, job.ID, "")
 	e.queue.Delete(ctx, msg)
+
+	logx.Infow("Email sent",
+		logx.Field("id", job.ID),
+		logx.Field("template", job.TemplateSlug),
+		logx.Field("recipients", job.Recipients),
+	)
 }
 
 func (e *Engine) handleError(ctx context.Context, job *queue.EmailJob, msg *goqite.Message, err error) {
@@ -147,6 +163,11 @@ func (e *Engine) handleError(ctx context.Context, job *queue.EmailJob, msg *goqi
 	if isPermanentFailure(err) || job.Attempts >= job.MaxAttempts {
 		e.queue.UpdateStatus(ctx, job.ID, "failed", err)
 		e.queue.Delete(ctx, msg)
+		logx.Errorw("Email delivery failed permanently",
+			logx.Field("id", job.ID),
+			logx.Field("attempts", job.Attempts),
+			logx.Field("error", err.Error()),
+		)
 		return
 	}
 
@@ -156,6 +177,13 @@ func (e *Engine) handleError(ctx context.Context, job *queue.EmailJob, msg *goqi
 
 	// Extend the message timeout to retry later
 	e.queue.Extend(ctx, msg, backoff)
+
+	logx.Infow("Email delivery retrying",
+		logx.Field("id", job.ID),
+		logx.Field("attempt", job.Attempts),
+		logx.Field("backoff", backoff.String()),
+		logx.Field("error", err.Error()),
+	)
 }
 
 func (e *Engine) calculateBackoff(attempts int) time.Duration {
