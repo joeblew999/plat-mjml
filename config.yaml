@@ -4,6 +4,7 @@ port: 8080
 
 mcp:
   name: mjml-server
+  version: "1.0.0"
   messageTimeout: 30s
 
 templates:

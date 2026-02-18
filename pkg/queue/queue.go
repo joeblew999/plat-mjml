@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,18 +43,12 @@ type Queue struct {
 }
 
 // NewQueue creates a new email queue.
+// The goqite table must be created by db.Migrate() before calling this.
 func NewQueue(db *sql.DB, name string, workers int) (*Queue, error) {
-	// Setup goqite schema (ignore "already exists" errors)
-	if err := goqite.Setup(context.Background(), db); err != nil {
-		// Check if it's just "table already exists" - that's fine
-		if !strings.Contains(err.Error(), "already exists") {
-			return nil, fmt.Errorf("setup goqite: %w", err)
-		}
-	}
-
 	q := goqite.New(goqite.NewOpts{
-		DB:   db,
-		Name: name,
+		DB:        db,
+		Name:      name,
+		SQLFlavor: goqite.SQLFlavorSQLite,
 	})
 
 	return &Queue{
@@ -91,8 +84,9 @@ func (q *Queue) Enqueue(ctx context.Context, job EmailJob) (string, error) {
 	}
 
 	if err := q.queue.Send(ctx, goqite.Message{
-		Body:  body,
-		Delay: delay,
+		Body:     body,
+		Delay:    delay,
+		Priority: job.Priority,
 	}); err != nil {
 		return "", fmt.Errorf("send to queue: %w", err)
 	}
@@ -164,8 +158,12 @@ func (q *Queue) GetStatus(ctx context.Context, id string) (*EmailJob, error) {
 		return nil, err
 	}
 
-	json.Unmarshal([]byte(recipients), &job.Recipients)
-	json.Unmarshal([]byte(data), &job.Data)
+	if err := json.Unmarshal([]byte(recipients), &job.Recipients); err != nil {
+		return nil, fmt.Errorf("unmarshal recipients: %w", err)
+	}
+	if err := json.Unmarshal([]byte(data), &job.Data); err != nil {
+		return nil, fmt.Errorf("unmarshal data: %w", err)
+	}
 	if errStr.Valid {
 		job.Error = errStr.String
 	}
@@ -242,8 +240,12 @@ func (q *Queue) List(ctx context.Context, status string, limit int) ([]*EmailJob
 			return nil, err
 		}
 
-		json.Unmarshal([]byte(recipients), &job.Recipients)
-		json.Unmarshal([]byte(data), &job.Data)
+		if err := json.Unmarshal([]byte(recipients), &job.Recipients); err != nil {
+			return nil, fmt.Errorf("unmarshal recipients: %w", err)
+		}
+		if err := json.Unmarshal([]byte(data), &job.Data); err != nil {
+			return nil, fmt.Errorf("unmarshal data: %w", err)
+		}
 		if errStr.Valid {
 			job.Error = errStr.String
 		}
@@ -281,15 +283,21 @@ func (q *Queue) Stats(ctx context.Context) (map[string]int, error) {
 }
 
 func (q *Queue) storeEmail(ctx context.Context, job EmailJob) error {
-	recipients, _ := json.Marshal(job.Recipients)
-	data, _ := json.Marshal(job.Data)
+	recipients, err := json.Marshal(job.Recipients)
+	if err != nil {
+		return fmt.Errorf("marshal recipients: %w", err)
+	}
+	data, err := json.Marshal(job.Data)
+	if err != nil {
+		return fmt.Errorf("marshal data: %w", err)
+	}
 
 	var scheduledAt sql.NullTime
 	if job.ScheduledAt != nil {
 		scheduledAt = sql.NullTime{Time: *job.ScheduledAt, Valid: true}
 	}
 
-	_, err := q.db.ExecContext(ctx, `
+	_, err = q.db.ExecContext(ctx, `
 		INSERT INTO emails (id, template_slug, recipients, subject, data, status,
 		                    priority, attempts, max_attempts, scheduled_at, created_at)
 		VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?, CURRENT_TIMESTAMP)

@@ -46,6 +46,7 @@ func defaultConfig() server.Config {
 	c.Host = "0.0.0.0"
 	c.Port = 8080
 	c.Mcp.Name = "mjml-server"
+	c.Mcp.Version = "1.0.0"
 	c.Mcp.MessageTimeout = 30 * time.Second
 	c.Templates = server.TemplatesConfig{Dir: "./templates"}
 	c.Database = server.DatabaseConfig{Path: "./.data/plat-mjml.db"}

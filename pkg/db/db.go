@@ -62,6 +62,21 @@ func (d *DB) Path() string {
 // Migrate runs database migrations.
 func (d *DB) Migrate() error {
 	schema := `
+	-- goqite message queue (required by goqite v0.4.0+)
+	CREATE TABLE IF NOT EXISTS goqite (
+		id TEXT PRIMARY KEY DEFAULT ('m_' || lower(hex(randomblob(16)))),
+		created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
+		updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
+		queue TEXT NOT NULL,
+		body BLOB NOT NULL,
+		timeout TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
+		received INTEGER NOT NULL DEFAULT 0,
+		priority INTEGER NOT NULL DEFAULT 0
+	) STRICT;
+
+	CREATE INDEX IF NOT EXISTS goqite_queue_priority_created_idx
+		ON goqite (queue, priority DESC, created);
+
 	-- Templates with versioning
 	CREATE TABLE IF NOT EXISTS templates (
 		id TEXT PRIMARY KEY,

@@ -171,7 +171,11 @@ func (h *Handlers) sendDatastarSignals(w http.ResponseWriter, signals map[string
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	data, _ := json.Marshal(signals)
+	data, err := json.Marshal(signals)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	// Datastar expects SSE format with signal merge
 	w.Write([]byte("event: datastar-merge-signals\n"))

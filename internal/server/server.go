@@ -96,9 +96,10 @@ func New(c Config) (*Server, error) {
 
 // Start starts the server.
 func (s *Server) Start() {
+	uiPort := s.config.Port + 1
 	fmt.Printf("Starting plat-mjml server on %s:%d\n", s.config.Host, s.config.Port)
 	fmt.Printf("MCP endpoint: http://%s:%d/sse\n", s.config.Host, s.config.Port)
-	fmt.Printf("Web UI: http://%s:%d/\n", s.config.Host, s.config.Port)
+	fmt.Printf("Web UI: http://%s:%d/\n", s.config.Host, uiPort)
 	fmt.Printf("Templates loaded from: %s\n", s.config.Templates.Dir)
 	fmt.Printf("Database: %s\n", s.config.Database.Path)
 	fmt.Println()
@@ -109,7 +110,7 @@ func (s *Server) Start() {
 	s.delivery.Start(2)
 
 	// Start UI server on a separate port
-	uiPort := s.config.Port + 1
+	// uiPort already declared above for log message
 	mux := http.NewServeMux()
 	s.ui.RegisterRoutes(mux)
 

@@ -121,12 +121,17 @@ func (e *Engine) processJob(job *queue.EmailJob, msg *goqite.Message) {
 		return
 	}
 
-	// Send email to each recipient
+	// Send email to each recipient, collecting failures
+	var sendErrors []string
 	for _, recipient := range job.Recipients {
 		if err := mail.Send(e.smtpConfig, recipient, job.Subject, html); err != nil {
-			e.handleError(ctx, job, msg, fmt.Errorf("send to %s: %w", recipient, err))
-			return
+			sendErrors = append(sendErrors, fmt.Sprintf("send to %s: %v", recipient, err))
 		}
+	}
+
+	if len(sendErrors) > 0 {
+		e.handleError(ctx, job, msg, fmt.Errorf("%s", strings.Join(sendErrors, "; ")))
+		return
 	}
 
 	// Success - mark as sent and delete from queue
