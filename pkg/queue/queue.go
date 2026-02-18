@@ -26,6 +26,7 @@ type EmailJob struct {
 	Recipients   []string       `json:"recipients"`
 	Subject      string         `json:"subject"`
 	Data         map[string]any `json:"data,omitempty"`
+	Status       string         `json:"status"`
 	Priority     int            `json:"priority"`
 	Attempts     int            `json:"attempts"`
 	MaxAttempts  int            `json:"max_attempts"`
@@ -142,13 +143,13 @@ func (q *Queue) GetStatus(ctx context.Context, id string) (*EmailJob, error) {
 	`, id)
 
 	var job EmailJob
-	var recipients, data, status string
+	var recipients, data string
 	var scheduledAt, sentAt sql.NullTime
 	var errStr sql.NullString
 
 	err := row.Scan(
 		&job.ID, &job.TemplateSlug, &recipients, &job.Subject, &data,
-		&status, &job.Priority, &job.Attempts, &job.MaxAttempts,
+		&job.Status, &job.Priority, &job.Attempts, &job.MaxAttempts,
 		&scheduledAt, &sentAt, &errStr, &job.CreatedAt,
 	)
 	if err != nil {
@@ -227,13 +228,13 @@ func (q *Queue) List(ctx context.Context, status string, limit int) ([]*EmailJob
 	var jobs []*EmailJob
 	for rows.Next() {
 		var job EmailJob
-		var recipients, data, jobStatus string
+		var recipients, data string
 		var scheduledAt, sentAt sql.NullTime
 		var errStr sql.NullString
 
 		err := rows.Scan(
 			&job.ID, &job.TemplateSlug, &recipients, &job.Subject, &data,
-			&jobStatus, &job.Priority, &job.Attempts, &job.MaxAttempts,
+			&job.Status, &job.Priority, &job.Attempts, &job.MaxAttempts,
 			&scheduledAt, &sentAt, &errStr, &job.CreatedAt,
 		)
 		if err != nil {

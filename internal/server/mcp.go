@@ -124,8 +124,17 @@ func registerSendEmailTool(s mcp.McpServer, q *queue.Queue) {
 		data := args.Data
 		if data == nil {
 			testData := mjml.TestData()
-			if d, ok := testData[args.Template].(map[string]any); ok {
-				data = d
+			td := testData[args.Template]
+			if td == nil {
+				td = testData["simple"]
+			}
+			// Convert struct test data to map[string]any via JSON round-trip
+			b, err := json.Marshal(td)
+			if err == nil {
+				var m map[string]any
+				if err := json.Unmarshal(b, &m); err == nil {
+					data = m
+				}
 			}
 		}
 
@@ -181,6 +190,7 @@ func registerGetEmailStatusTool(s mcp.McpServer, q *queue.Queue) {
 			"template":   job.TemplateSlug,
 			"recipients": job.Recipients,
 			"subject":    job.Subject,
+			"status":     job.Status,
 			"attempts":   job.Attempts,
 			"error":      job.Error,
 			"created_at": job.CreatedAt,

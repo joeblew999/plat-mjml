@@ -20,10 +20,11 @@ type Font struct {
 // FontInfo contains metadata about a cached font
 type FontInfo struct {
 	Font
-	Path    string
-	Size    int64
-	Version string
-	Source  string // "google", "local"
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	Version string `json:"version"`
+	Source  string `json:"source"`  // "google", "local"
+	CDNURL  string `json:"cdn_url"` // CDN URL for use in email @font-face rules
 }
 
 // Manager handles font operations
@@ -57,11 +58,18 @@ func newDefaultFont(family string, weight int) Font {
 	return newFont(family, weight, DefaultFontFormat)
 }
 
-// NewManager creates a new font manager (environment-aware via config)
+// NewManager creates a new font manager using the default cache path (environment-aware via config).
 func NewManager() *Manager {
+	return NewManagerWithDir(GetLocalFontPath())
+}
+
+// NewManagerWithDir creates a new font manager with an explicit cache directory.
+// Use this in tests with t.TempDir() to avoid polluting the source tree.
+func NewManagerWithDir(cacheDir string) *Manager {
+	registryPath := filepath.Join(cacheDir, RegistryFilename)
 	return &Manager{
-		cacheDir: GetLocalFontPath(),
-		registry: NewRegistry(),
+		cacheDir: cacheDir,
+		registry: NewRegistryAt(registryPath),
 	}
 }
 
@@ -119,13 +127,14 @@ func (m *Manager) cacheFont(font Font) (string, error) {
 		return "", err
 	}
 
-	// Download from Google Fonts
-	if err := m.downloadGoogleFont(font, path); err != nil {
+	// Download from Google Fonts (returns CDN URL for email use)
+	cdnURL, err := downloadGoogleFont(font, path)
+	if err != nil {
 		return "", fmt.Errorf("failed to download font: %w", err)
 	}
 
-	// Register in registry
-	if err := m.registerFont(font, path); err != nil {
+	// Register in registry with CDN URL
+	if err := m.registerFont(font, path, cdnURL); err != nil {
 		log.Warn("Failed to register font", "error", err)
 	}
 
@@ -134,7 +143,7 @@ func (m *Manager) cacheFont(font Font) (string, error) {
 
 // prepareFontPath ensures directory exists and returns the full file path
 func (m *Manager) prepareFontPath(font Font) (string, error) {
-	familyDir := GetLocalFontPathForFamily(font.Family)
+	familyDir := filepath.Join(m.cacheDir, font.Family)
 	if err := ensureDir(familyDir); err != nil {
 		return "", fmt.Errorf("failed to create font directory: %w", err)
 	}
@@ -144,20 +153,21 @@ func (m *Manager) prepareFontPath(font Font) (string, error) {
 }
 
 // registerFont adds font info to the registry
-func (m *Manager) registerFont(font Font, path string) error {
+func (m *Manager) registerFont(font Font, path string, cdnURL string) error {
 	info := FontInfo{
 		Font:    font,
 		Path:    path,
 		Source:  "google",
 		Version: "latest",
+		CDNURL:  cdnURL,
 	}
 	return m.registry.Add(info)
 }
 
-// downloadGoogleFont downloads a font from Google Fonts
-func (m *Manager) downloadGoogleFont(font Font, path string) error {
-	// This will be implemented in google.go
-	return downloadGoogleFont(font, path)
+// GetInfo returns the full FontInfo for a cached font
+func (m *Manager) GetInfo(family string, weight int) (FontInfo, bool) {
+	font := newDefaultFont(family, weight)
+	return m.registry.GetInfo(font)
 }
 
 // ensureDir creates a directory if it doesn't exist

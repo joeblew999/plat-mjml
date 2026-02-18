@@ -25,7 +25,8 @@ processes:
   # Render all templates to HTML files
   render-all:
     command: |
-      for template in simple welcome reset_password notification; do
+      mkdir -p .data
+      for template in simple welcome reset_password notification premium_newsletter business_announcement; do
         go run . render -template=$template -out=.data/$template.html
         echo "Rendered $template"
       done

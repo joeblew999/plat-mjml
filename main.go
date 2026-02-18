@@ -59,7 +59,7 @@ Examples:
   mjml list -dir=./templates
 
 Environment Variables:
-  DATA_PATH           Base data directory (default: ./data)
+  DATA_PATH           Base data directory (default: ./.data)
   MJML_TEMPLATE_PATH  Template directory (default: $DATA_PATH/templates)
   GMAIL_USERNAME      Gmail username for sending
   GMAIL_APP_PASSWORD  Gmail app password for sending`)

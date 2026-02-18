@@ -15,11 +15,15 @@ type Registry struct {
 	data map[string]FontInfo
 }
 
-// NewRegistry creates a new font registry (environment-aware via config)
+// NewRegistry creates a new font registry using the default font path.
 func NewRegistry() *Registry {
-	registryPath := filepath.Join(GetLocalFontPath(), RegistryFilename)
+	return NewRegistryAt(filepath.Join(GetLocalFontPath(), RegistryFilename))
+}
+
+// NewRegistryAt creates a new font registry at the specified path.
+func NewRegistryAt(path string) *Registry {
 	r := &Registry{
-		path: registryPath,
+		path: path,
 		data: make(map[string]FontInfo),
 	}
 	r.load()
@@ -28,19 +32,28 @@ func NewRegistry() *Registry {
 
 // GetPath returns the path for a font if it exists
 func (r *Registry) GetPath(font Font) (string, bool) {
-	key := r.key(font)
-	info, exists := r.data[key]
+	info, exists := r.GetInfo(font)
 	if !exists {
 		return "", false
 	}
-	
+	return info.Path, true
+}
+
+// GetInfo returns the full FontInfo for a font if it exists
+func (r *Registry) GetInfo(font Font) (FontInfo, bool) {
+	key := r.key(font)
+	info, exists := r.data[key]
+	if !exists {
+		return FontInfo{}, false
+	}
+
 	// Verify file still exists
 	if !r.fileExists(info.Path) {
 		r.removeStaleEntry(key)
-		return "", false
+		return FontInfo{}, false
 	}
-	
-	return info.Path, true
+
+	return info, true
 }
 
 // fileExists checks if a file exists

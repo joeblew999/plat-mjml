@@ -38,6 +38,7 @@ type RenderOptions struct {
 	EnableValidation bool   // Validate MJML before rendering
 	TemplateDir      string // Default directory for templates
 	EnableFonts      bool   // Enable Google Fonts integration
+	FontDir          string // Font cache directory (empty = default from config)
 }
 
 // RendererOption configures the renderer
@@ -78,6 +79,13 @@ func WithFonts(enabled bool) RendererOption {
 	}
 }
 
+// WithFontDir sets the font cache directory. If not set, uses config default.
+func WithFontDir(dir string) RendererOption {
+	return func(opts *RenderOptions) {
+		opts.FontDir = dir
+	}
+}
+
 // NewRenderer creates a new MJML renderer with the specified options
 func NewRenderer(opts ...RendererOption) *Renderer {
 	options := &RenderOptions{
@@ -100,7 +108,11 @@ func NewRenderer(opts ...RendererOption) *Renderer {
 
 	// Initialize font manager if fonts are enabled
 	if options.EnableFonts {
-		renderer.fontManager = font.NewManager()
+		if options.FontDir != "" {
+			renderer.fontManager = font.NewManagerWithDir(options.FontDir)
+		} else {
+			renderer.fontManager = font.NewManager()
+		}
 	}
 
 	return renderer
@@ -151,6 +163,46 @@ func (r *Renderer) LoadTemplatesFromDir(dir string) error {
 		name := strings.TrimSuffix(filepath.Base(path), ".mjml")
 		return r.LoadTemplateFromFile(name, path)
 	})
+}
+
+// ReplaceTemplatesFromDir atomically replaces all templates by loading from a
+// directory. This holds the write lock for the entire operation so no requests
+// see a partially-loaded state.
+func (r *Renderer) ReplaceTemplatesFromDir(dir string) error {
+	newTemplates := make(map[string]*template.Template)
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".mjml") {
+			return nil
+		}
+
+		name := strings.TrimSuffix(filepath.Base(path), ".mjml")
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read template file %s: %w", path, err)
+		}
+
+		tmpl, err := template.New(name).Parse(string(content))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", name, err)
+		}
+
+		newTemplates[name] = tmpl
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	r.templates = newTemplates
+	r.cache = make(map[string]string)
+	r.mu.Unlock()
+
+	return nil
 }
 
 // RenderTemplate renders a template with the given data to HTML
@@ -316,65 +368,65 @@ func (r *Renderer) LoadFont(family string, weight int) error {
 	return r.fontManager.Cache(family, weight)
 }
 
-// GetFontCSS generates CSS for embedding a cached font in email templates
+// GetFontCSS generates @font-face CSS for a font, using CDN URLs for email compatibility.
+// The font is downloaded/cached if not already available.
 func (r *Renderer) GetFontCSS(family string, weight int) (string, error) {
 	if !r.options.EnableFonts || r.fontManager == nil {
 		return "", fmt.Errorf("font management is disabled")
 	}
-	
-	// Get font path
-	path, err := r.fontManager.Get(family, weight)
-	if err != nil {
+
+	// Ensure font is cached (downloads if needed)
+	if _, err := r.fontManager.Get(family, weight); err != nil {
 		return "", fmt.Errorf("failed to get font: %w", err)
 	}
-	
-	// Create font object for CSS generation
-	fontObj := font.Font{
-		Family: family,
-		Weight: weight,
-		Style:  "normal",
-		Format: "woff2",
+
+	// Get full info including CDN URL
+	info, ok := r.fontManager.GetInfo(family, weight)
+	if !ok {
+		return "", fmt.Errorf("font %s %d not found after caching", family, weight)
 	}
-	
-	return font.GetFontCSS(fontObj, path), nil
+
+	return font.GetFontCSS(info), nil
 }
 
 // GetEmailSafeFontStack returns a CSS font stack with email-safe fallbacks
 func (r *Renderer) GetEmailSafeFontStack(primaryFont string) string {
-	emailSafeFonts := font.GetEmailSafeFonts()
-	
-	// Build font stack: primary font + email-safe fallbacks
+	lower := strings.ToLower(primaryFont)
+
+	// Classify font type — most Google Fonts are sans-serif
+	fontType := "sans" // default
+	if strings.Contains(lower, "serif") && !strings.Contains(lower, "sans") {
+		fontType = "serif"
+	} else if strings.Contains(lower, "mono") || strings.Contains(lower, "code") || strings.Contains(lower, "courier") {
+		fontType = "mono"
+	}
+
 	stack := fmt.Sprintf("'%s'", primaryFont)
-	for _, safeFont := range emailSafeFonts {
-		// Add relevant fallbacks based on font type
-		switch {
-		case strings.Contains(strings.ToLower(primaryFont), "sans"):
-			if safeFont == "Arial" || safeFont == "Helvetica" || safeFont == "Verdana" {
-				stack += fmt.Sprintf(", '%s'", safeFont)
-			}
-		case strings.Contains(strings.ToLower(primaryFont), "serif"):
-			if safeFont == "Georgia" || safeFont == "Times" {
-				stack += fmt.Sprintf(", '%s'", safeFont)
-			}
-		case strings.Contains(strings.ToLower(primaryFont), "mono"):
-			if safeFont == "Courier" || safeFont == "Lucida Console" {
-				stack += fmt.Sprintf(", '%s'", safeFont)
-			}
-		}
+
+	switch fontType {
+	case "serif":
+		stack += ", Georgia, 'Times New Roman', Times, serif"
+	case "mono":
+		stack += ", 'Courier New', Courier, 'Lucida Console', monospace"
+	default: // sans
+		stack += ", Arial, Helvetica, sans-serif"
 	}
-	
-	// Add generic fallback
-	if strings.Contains(strings.ToLower(primaryFont), "sans") {
-		stack += ", sans-serif"
-	} else if strings.Contains(strings.ToLower(primaryFont), "serif") {
-		stack += ", serif"
-	} else if strings.Contains(strings.ToLower(primaryFont), "mono") {
-		stack += ", monospace"
-	} else {
-		stack += ", sans-serif" // Default fallback
-	}
-	
+
 	return stack
+}
+
+// PrepareFontData generates FontCSS and FontStack for a given font family,
+// ready to inject into template data. Downloads the font if not cached.
+func (r *Renderer) PrepareFontData(family string, weight int) (fontCSS, fontStack string, err error) {
+	fontStack = r.GetEmailSafeFontStack(family)
+
+	css, err := r.GetFontCSS(family, weight)
+	if err != nil {
+		// Font CSS is optional — return stack with empty CSS
+		return "", fontStack, nil
+	}
+
+	return css, fontStack, nil
 }
 
 // ListCachedFonts returns all currently cached fonts

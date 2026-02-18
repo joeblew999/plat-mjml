@@ -33,14 +33,21 @@ Thumbs.db
 .env
 .env.local
 .env.*
+!.env.example
 
-# Data cache (runtime generated)
+# Data cache (runtime generated — may appear in any directory)
 .data/
+**/data/fonts/
+
+# Font files (should not be committed)
+*.ttf
+*.woff
+*.woff2
+registry.json
 
 # Process Compose
 .pc.log
 .pc.sock
 
-# Generated HTML (keep testdata)
+# Generated HTML
 *.html
-!testdata/*.html

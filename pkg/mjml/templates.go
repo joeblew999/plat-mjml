@@ -9,23 +9,27 @@ type EmailData struct {
 	// Recipient information
 	Name  string `json:"name"`
 	Email string `json:"email"`
-	
+
 	// Email metadata
 	Subject   string    `json:"subject"`
 	Timestamp time.Time `json:"timestamp"`
-	
+
 	// Brand/company information
 	CompanyName string `json:"company_name"`
 	CompanyLogo string `json:"company_logo"`
 	CompanyURL  string `json:"company_url"`
-	
+
 	// Content
 	Title   string `json:"title"`
 	Message string `json:"message"`
-	
+
 	// Action items
 	ButtonText string `json:"button_text"`
 	ButtonURL  string `json:"button_url"`
+
+	// Font support (optional — used by all templates)
+	FontCSS   string `json:"font_css,omitempty"`
+	FontStack string `json:"font_stack,omitempty"`
 }
 
 // WelcomeEmailData extends EmailData for welcome emails
@@ -69,9 +73,6 @@ type NewsletterData struct {
 	SocialLinks        []SocialLink        `json:"social_links"`
 	CompanyAddress     string              `json:"company_address"`
 	UnsubscribeURL     string              `json:"unsubscribe_url"`
-	// Font support (optional)
-	FontCSS            string              `json:"font_css,omitempty"`
-	FontStack          string              `json:"font_stack,omitempty"`
 }
 
 // FeaturedItem represents an item in featured content
@@ -93,7 +94,7 @@ func TestData() map[string]any {
 		Name:        "Test User",
 		Email:       "test@example.com",
 		Subject:     "Test Email",
-		Title:       "Test Title", 
+		Title:       "Test Title",
 		Message:     "This is a test message",
 		ButtonText:  "Click Here",
 		ButtonURL:   "https://example.com",
@@ -101,6 +102,7 @@ func TestData() map[string]any {
 		CompanyName: "Test Company",
 		CompanyLogo: "https://via.placeholder.com/200x80/3498db/ffffff?text=LOGO",
 		CompanyURL:  "https://testcompany.com",
+		FontStack:   "'Inter', Arial, Helvetica, sans-serif",
 	}
 
 	return map[string]any{
@@ -140,6 +142,7 @@ func TestData() map[string]any {
 				CompanyName: "Premium Content Co.",
 				CompanyLogo: "https://via.placeholder.com/180x70/4299e1/ffffff?text=PREMIUM",
 				Timestamp:   time.Now(),
+				FontStack:   "'Inter', Arial, Helvetica, sans-serif",
 			},
 			PreviewText:      "Your monthly dose of premium content",
 			Subtitle:         "January 2024 Edition",
@@ -164,7 +167,34 @@ func TestData() map[string]any {
 			},
 			CompanyAddress: "123 Premium St, NY 10001",
 			UnsubscribeURL: "https://premium.example.com/unsubscribe?token=abc123",
-			FontStack:      "'Inter', Arial, Helvetica, sans-serif",
+		},
+
+		"business_announcement": map[string]any{
+			"subject":              "Grand Opening Announcement",
+			"preview":              "You're invited to our grand opening event",
+			"company_name":         "Test Company",
+			"company_logo":         "https://via.placeholder.com/150x60/040B4F/ffffff?text=COMPANY",
+			"name":                 "Test User",
+			"font_stack":           "'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+			"location":             "San Francisco, CA",
+			"venue":                "Innovation Center",
+			"address":              "123 Main Street, Suite 100",
+			"title":                "Grand Opening Event",
+			"message":              "We're thrilled to invite you to our grand opening celebration.",
+			"description":          "Join us for an evening of networking, demos, and refreshments.",
+			"primary_button_text":  "RSVP Now",
+			"primary_button_url":   "https://testcompany.com/rsvp",
+			"call_to_action_text":  "We hope to see you there!",
+			"closing_message":      "Best regards, The Team",
+			"visit_title":          "Visit Us",
+			"visit_message":        "We look forward to welcoming you to our new location.",
+			"hours": []map[string]any{
+				{"day": "Monday - Friday", "time": "9:00 AM - 6:00 PM"},
+				{"day": "Saturday", "time": "10:00 AM - 4:00 PM"},
+			},
+			"disclaimer":      "You are receiving this email because you signed up for updates.",
+			"privacy_url":     "https://testcompany.com/privacy",
+			"unsubscribe_url": "https://testcompany.com/unsubscribe",
 		},
 	}
 }

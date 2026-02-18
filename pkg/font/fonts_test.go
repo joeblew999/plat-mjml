@@ -8,20 +8,21 @@ import (
 )
 
 func TestFontManager(t *testing.T) {
-	manager := NewManager()
+	tmpDir := t.TempDir()
+	manager := NewManagerWithDir(tmpDir)
 
 	t.Run("ManagerCreation", func(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NotNil(t, manager.registry)
-		assert.Equal(t, GetLocalFontPath(), manager.cacheDir)
-		t.Logf("📁 Cache directory: %s", manager.cacheDir)
-		t.Logf("📋 Registry path: %s", manager.registry.path)
+		assert.Equal(t, tmpDir, manager.cacheDir)
+		t.Logf("Cache directory: %s", manager.cacheDir)
+		t.Logf("Registry path: %s", manager.registry.path)
 	})
 
 	t.Run("FontCaching", func(t *testing.T) {
 		family := "Roboto"
 		weight := 400
-		
+
 		// Cache the font
 		err := manager.Cache(family, weight)
 		require.NoError(t, err)
@@ -35,34 +36,55 @@ func TestFontManager(t *testing.T) {
 		assert.FileExists(t, path)
 		assert.Contains(t, path, family)
 		assert.Contains(t, path, "400.ttf")
-		t.Logf("✅ Font cached: %s", path)
+		t.Logf("Font cached: %s", path)
 	})
 
 	t.Run("CacheHitBehavior", func(t *testing.T) {
 		family := "Inter"
 		weight := 400
-		
+
 		// First call - cache miss, downloads
 		path1, err := manager.Get(family, weight)
 		require.NoError(t, err)
-		
+
 		// Second call - cache hit, same path
 		path2, err := manager.Get(family, weight)
 		require.NoError(t, err)
 		assert.Equal(t, path1, path2, "Cache hit should return same path")
-		t.Logf("✅ Cache hit - reused path: %s", path1)
+		t.Logf("Cache hit - reused path: %s", path1)
 	})
 
 	t.Run("DifferentFormats", func(t *testing.T) {
 		family := "Open Sans"
 		weight := 400
-		
+
 		// TTF format (default)
 		ttfPath, err := manager.GetFormat(family, weight, "ttf")
 		require.NoError(t, err)
 		assert.Contains(t, ttfPath, ".ttf")
 		assert.FileExists(t, ttfPath)
-		t.Logf("✅ TTF format cached: %s", ttfPath)
+		t.Logf("TTF format cached: %s", ttfPath)
+	})
+
+	t.Run("CDNURLCaptured", func(t *testing.T) {
+		family := "Roboto"
+		weight := 400
+
+		info, ok := manager.GetInfo(family, weight)
+		require.True(t, ok, "Font should be cached")
+
+		// CDN URL should be captured from Google Fonts
+		t.Logf("CDN URL: %s", info.CDNURL)
+		if info.CDNURL != "" {
+			assert.Contains(t, info.CDNURL, "fonts.gstatic.com", "CDN URL should point to Google Fonts CDN")
+
+			// GetFontCSS should use CDN URL
+			css := GetFontCSS(info)
+			assert.Contains(t, css, "fonts.gstatic.com", "Generated CSS should use CDN URL")
+			assert.Contains(t, css, "@font-face", "Should generate @font-face rule")
+			assert.Contains(t, css, family, "Should include font family name")
+			t.Logf("Font CSS:\n%s", css)
+		}
 	})
 
 	t.Run("RegistryPersistence", func(t *testing.T) {
@@ -72,36 +94,36 @@ func TestFontManager(t *testing.T) {
 		err := manager.Cache(family, weight)
 		require.NoError(t, err)
 
-		// Create new manager (simulates restart)
-		newManager := NewManager()
-		
+		// Create new manager with same dir (simulates restart)
+		newManager := NewManagerWithDir(tmpDir)
+
 		// Should find the cached font
 		assert.True(t, newManager.Available(family, weight))
-		
+
 		path, err := newManager.Get(family, weight)
 		require.NoError(t, err)
 		assert.FileExists(t, path)
-		t.Logf("✅ Registry persistence verified: %s", path)
+		t.Logf("Registry persistence verified: %s", path)
 	})
 }
 
 func TestRegistryKeyGeneration(t *testing.T) {
-	registry := NewRegistry()
-	
+	registry := NewRegistryAt(t.TempDir() + "/registry.json")
+
 	font := Font{
 		Family: "Roboto",
 		Weight: 400,
 		Style:  "normal",
 		Format: "ttf",
 	}
-	
+
 	key := registry.key(font)
 	assert.Equal(t, "roboto-400-normal-ttf", key)
-	
+
 	// Test different weights/styles produce different keys
 	boldFont := Font{Family: "Roboto", Weight: 700, Style: "normal", Format: "ttf"}
 	italicFont := Font{Family: "Roboto", Weight: 400, Style: "italic", Format: "ttf"}
-	
+
 	assert.NotEqual(t, registry.key(font), registry.key(boldFont))
 	assert.NotEqual(t, registry.key(font), registry.key(italicFont))
 }
@@ -129,7 +151,7 @@ func TestHelperFunctions(t *testing.T) {
 		assert.Equal(t, "normal", font.Style) // Default
 		assert.Equal(t, "ttf", font.Format)
 	})
-	
+
 	t.Run("newDefaultFont", func(t *testing.T) {
 		font := newDefaultFont("Inter", 700)
 		assert.Equal(t, "Inter", font.Family)
@@ -145,13 +167,13 @@ func TestTTFValidation(t *testing.T) {
 			{0x00, 0x01, 0x00, 0x00}, // Standard TrueType
 			{'O', 'T', 'T', 'O'},     // OpenType with PostScript
 		}
-		
+
 		for i, sig := range validSignatures {
 			isValid := isValidTTFSignature(sig)
 			assert.True(t, isValid, "Valid signature %d (%x) should be recognized as TTF", i, sig)
 		}
 	})
-	
+
 	t.Run("InvalidTTFSignatures", func(t *testing.T) {
 		invalidSignatures := [][]byte{
 			{0xc9, 0xe1, 0x00, 0x00}, // WOFF2
@@ -159,7 +181,7 @@ func TestTTFValidation(t *testing.T) {
 			{0x00, 0x00, 0x01, 0x00}, // Wrong TrueType order
 			{0x45, 0x4f, 0x54, 0x00}, // EOT format
 		}
-		
+
 		for i, sig := range invalidSignatures {
 			isValid := isValidTTFSignature(sig)
 			assert.False(t, isValid, "Invalid signature %d (%x) should not be recognized as TTF", i, sig)
@@ -175,7 +197,7 @@ func isValidTTFSignature(signature []byte) bool {
 	// TTF: 0x00, 0x01, 0x00, 0x00
 	// OTF: 'OTTO'
 	return (signature[0] == 0x00 && signature[1] == 0x01 && signature[2] == 0x00 && signature[3] == 0x00) ||
-		   (string(signature[0:4]) == "OTTO")
+		(string(signature[0:4]) == "OTTO")
 }
 
 func TestDefaults(t *testing.T) {

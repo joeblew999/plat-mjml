@@ -11,6 +11,7 @@ import (
 	"github.com/joeblew999/plat-mjml/pkg/mail"
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
+	gomjml "github.com/preslavrachev/gomjml/mjml"
 	"github.com/zeromicro/go-zero/mcp"
 )
 
@@ -130,4 +131,5 @@ func (s *Server) Stop() {
 	s.delivery.Stop()
 	s.mcp.Stop()
 	s.db.Close()
+	gomjml.StopASTCacheCleanup()
 }

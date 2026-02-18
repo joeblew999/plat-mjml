@@ -14,39 +14,39 @@ import (
 
 // Uses GoogleFontsAPI from consts.go
 
-// downloadGoogleFont downloads a font from Google Fonts using CSS parsing
-func downloadGoogleFont(font Font, path string) error {
+// downloadGoogleFont downloads a font from Google Fonts and returns the CDN URL
+func downloadGoogleFont(font Font, path string) (cdnURL string, err error) {
 	// For TTF format, try direct API first
 	if font.Format == "ttf" {
-		if err := tryDirectTTFDownload(font, path); err == nil {
-			return nil
+		if url, dlErr := tryDirectTTFDownload(font, path); dlErr == nil {
+			return url, nil
 		}
 		log.Warn("Direct TTF API failed, trying CSS method", "family", font.Family)
 	}
-	
+
 	// Fallback to CSS method
-	return tryCSSSDownload(font, path)
+	return tryCSSDownload(font, path)
 }
 
 // tryDirectTTFDownload attempts to download TTF using direct API
-func tryDirectTTFDownload(font Font, path string) error {
+func tryDirectTTFDownload(font Font, path string) (string, error) {
 	fontURL, err := getGoogleFontDirectURL(font)
 	if err != nil {
-		return err
+		return "", err
 	}
 	log.Info("Using direct TTF URL", "family", font.Family, "url", fontURL)
-	return downloadFontFile(fontURL, path)
+	return fontURL, downloadFontFile(fontURL, path)
 }
 
-// tryCSSSDownload attempts to download using CSS parsing method
-func tryCSSSDownload(font Font, path string) error {
+// tryCSSDownload attempts to download using CSS parsing method
+func tryCSSDownload(font Font, path string) (string, error) {
 	cssURL := buildGoogleFontsURL(font)
 	fontURL, err := getFontURL(cssURL, font.Format)
 	if err != nil {
 		log.Warn("Failed to get font from CSS, using mock", "family", font.Family, "error", err)
-		return createMockFontFile(path, font)
+		return "", createMockFontFile(path, font)
 	}
-	return downloadFontFile(fontURL, path)
+	return fontURL, downloadFontFile(fontURL, path)
 }
 
 // GoogleFontsResponse represents the Google Fonts Web API response
@@ -202,15 +202,21 @@ func ListGoogleFonts() []string {
 	return DefaultFonts
 }
 
-// GetFontCSS generates CSS for embedding a font (useful for email/web)
-func GetFontCSS(font Font, fontPath string) string {
+// GetFontCSS generates @font-face CSS for embedding a font.
+// When a CDN URL is available (from Google Fonts), it uses that for email compatibility.
+// Falls back to the local path if no CDN URL is set.
+func GetFontCSS(info FontInfo) string {
+	src := info.Path
+	if info.CDNURL != "" {
+		src = info.CDNURL
+	}
 	return fmt.Sprintf(`@font-face {
   font-family: '%s';
   font-style: %s;
   font-weight: %d;
   font-display: swap;
   src: url('%s') format('%s');
-}`, font.Family, font.Style, font.Weight, fontPath, font.Format)
+}`, info.Family, info.Style, info.Weight, src, info.Format)
 }
 
 // GetEmailSafeFonts returns fonts that are widely supported in email clients

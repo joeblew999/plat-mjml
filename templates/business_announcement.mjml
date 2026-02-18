@@ -4,16 +4,21 @@
     <mj-preview>{{.preview}}</mj-preview>
     <mj-attributes>
       <mj-all
-        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-family="{{if .font_stack}}{{.font_stack}}{{else}}'Helvetica Neue', Helvetica, Arial, sans-serif{{end}}"
       ></mj-all>
       <mj-text
         font-weight="400"
         font-size="16px"
         color="#000000"
         line-height="24px"
-        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-family="{{if .font_stack}}{{.font_stack}}{{else}}'Helvetica Neue', Helvetica, Arial, sans-serif{{end}}"
       ></mj-text>
     </mj-attributes>
+    {{if .font_css}}
+    <mj-style>
+      {{.font_css}}
+    </mj-style>
+    {{end}}
     <mj-style inline="inline">
       .body-section { -webkit-box-shadow: 1px 4px 11px 0px rgba(0, 0, 0, 0.15);
       -moz-box-shadow: 1px 4px 11px 0px rgba(0, 0, 0, 0.15); box-shadow: 1px 4px

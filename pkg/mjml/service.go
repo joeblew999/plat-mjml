@@ -2,7 +2,6 @@ package mjml
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/joeblew999/plat-mjml/pkg/config"
 	"github.com/joeblew999/plat-mjml/pkg/log"
@@ -16,7 +15,7 @@ type Service struct {
 
 // NewService creates a new MJML service with default configuration
 func NewService() *Service {
-	templateDir := filepath.Join(config.GetDataPath(), "email-templates")
+	templateDir := config.GetMjmlTemplatePath()
 	
 	renderer := NewRenderer(
 		WithCache(true),
@@ -109,28 +108,21 @@ func (s *Service) LoadTemplateFromFile(name, filePath string) error {
 	return nil
 }
 
-// ReloadTemplates reloads all templates from the template directory
+// ReloadTemplates reloads all templates from the template directory.
+// It clears and reloads atomically under a single lock to avoid serving
+// requests while templates are partially loaded.
 func (s *Service) ReloadTemplates() error {
 	log.Info("Reloading templates", "dir", s.templateDir)
-	
-	// Clear existing templates
-	templates := s.renderer.ListTemplates()
-	for _, tmpl := range templates {
-		s.renderer.RemoveTemplate(tmpl)
-	}
-	
-	// Reload from directory
-	if err := s.renderer.LoadTemplatesFromDir(s.templateDir); err != nil {
+
+	// Clear and reload atomically
+	if err := s.renderer.ReplaceTemplatesFromDir(s.templateDir); err != nil {
 		log.Error("Failed to reload templates", "error", err)
 		return fmt.Errorf("failed to reload templates: %w", err)
 	}
-	
-	// Clear cache to ensure fresh renders
-	s.renderer.ClearCache()
-	
+
 	newTemplates := s.renderer.ListTemplates()
 	log.Info("Templates reloaded", "count", len(newTemplates), "templates", newTemplates)
-	
+
 	return nil
 }
 

@@ -53,7 +53,9 @@ func Dashboard() g.Node {
 		// Stats cards
 		h.Div(h.Class("stats-grid"),
 			StatCard("pending", "Pending"),
+			StatCard("processing", "Processing"),
 			StatCard("sent", "Sent"),
+			StatCard("retry", "Retry"),
 			StatCard("failed", "Failed"),
 			StatCard("scheduled", "Scheduled"),
 		),
@@ -170,6 +172,11 @@ func QueuePage() g.Node {
 				data.On("click", "$filter = 'pending'; @get('/api/queue?status=pending')"),
 				data.Class("active", "$filter === 'pending'"),
 				g.Text("Pending"),
+			),
+			h.Button(
+				data.On("click", "$filter = 'retry'; @get('/api/queue?status=retry')"),
+				data.Class("active", "$filter === 'retry'"),
+				g.Text("Retry"),
 			),
 			h.Button(
 				data.On("click", "$filter = 'sent'; @get('/api/queue?status=sent')"),
