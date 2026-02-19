@@ -8,7 +8,6 @@ import (
 	"github.com/joeblew999/plat-mjml/internal/config"
 	"github.com/joeblew999/plat-mjml/internal/errorx"
 	"github.com/joeblew999/plat-mjml/internal/handler"
-	"github.com/joeblew999/plat-mjml/internal/server"
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/ui"
 	"github.com/joeblew999/plat-mjml/pkg/delivery"
@@ -38,7 +37,7 @@ func main() {
 
 	// MCP server
 	mcpServer := mcp.NewMcpServer(c.McpConf)
-	server.RegisterMCPTools(mcpServer, ctx.Renderer, ctx.Queue)
+	registerMCPTools(mcpServer, ctx.Renderer, ctx.Queue)
 
 	// UI server (Datastar web UI)
 	uiServer := rest.MustNewServer(c.UI.RestConf, rest.WithCors("*"))

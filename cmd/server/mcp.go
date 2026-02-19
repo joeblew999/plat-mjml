@@ -1,4 +1,4 @@
-package server
+package main
 
 import (
 	"context"
@@ -30,8 +30,8 @@ type getEmailStatusArgs struct {
 	ID string `json:"id" jsonschema:"email job ID returned from send_email"`
 }
 
-// RegisterMCPTools registers all MCP tools for the email platform.
-func RegisterMCPTools(s mcp.McpServer, renderer *mjml.Renderer, q *queue.Queue) {
+// registerMCPTools registers all MCP tools for the email platform.
+func registerMCPTools(s mcp.McpServer, renderer *mjml.Renderer, q *queue.Queue) {
 	registerRenderTool(s, renderer)
 	registerListTemplatesTool(s, renderer)
 	registerSendEmailTool(s, q)
@@ -207,4 +207,3 @@ func registerGetEmailStatusTool(s mcp.McpServer, q *queue.Queue) {
 		}, nil, nil
 	})
 }
-

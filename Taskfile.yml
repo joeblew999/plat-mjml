@@ -19,7 +19,7 @@ tasks:
   run:
     desc: Run CLI (usage — task run -- render -template=simple)
     cmds:
-      - go run . {{.CLI_ARGS}}
+      - go run ./cmd/cli {{.CLI_ARGS}}
 
   test:
     desc: Run tests
@@ -36,7 +36,7 @@ tasks:
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - go build -o {{.BIN_DIR}}/server ./cmd/server
-      - go build -o {{.BIN_DIR}}/plat-mjml .
+      - go build -o {{.BIN_DIR}}/plat-mjml ./cmd/cli
     sources:
       - ./**/*.go
       - go.mod
