@@ -6,39 +6,70 @@ dotenv:
 vars:
   DATA_DIR: '{{.ROOT_DIR}}/.data'
   BIN_DIR: '{{.ROOT_DIR}}/.bin'
+  API_FILE: api/plat-mjml.api
 
 tasks:
-  # Build
-  build:
-    desc: Build server binary
+  # --- Run ---
+  server:
+    desc: Start MCP server + Web UI + REST API
+    deps: [kill-ports]
     cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - go build -o {{.BIN_DIR}}/server ./cmd/server
+      - go run ./cmd/server
 
-  build:cli:
-    desc: Build CLI binary
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - go build -o {{.BIN_DIR}}/plat-mjml .
-
-  # Setup
-  deps:
-    desc: Install dependencies and tools
-    cmds:
-      - go mod download
-      - go install github.com/zeromicro/go-zero/tools/goctl@latest
-      - go install github.com/a-h/templ/cmd/templ@latest
-      - echo "For VSCode, install the goctl extension from marketplace"
-      - echo "  https://marketplace.visualstudio.com/items?itemName=xiaoxin-technology.goctl"
-
-  # CLI Commands
   run:
     desc: Run CLI (usage - task run -- render -template=simple)
     cmds:
       - go run . {{.CLI_ARGS}}
 
+  # --- Build ---
+  build:
+    desc: Build all binaries
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BIN_DIR}}/server ./cmd/server
+      - go build -o {{.BIN_DIR}}/plat-mjml .
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BIN_DIR}}/server'
+      - '{{.BIN_DIR}}/plat-mjml'
+
+  # --- Development ---
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  generate:
+    desc: Regenerate API code, types, and Swagger docs from .api file
+    cmds:
+      - goctl api validate --api {{.API_FILE}}
+      - goctl api go --api {{.API_FILE}} --dir . --style gozero
+      - rm -f mjml.go && rm -rf etc/
+      - goctl api swagger --api {{.API_FILE}} --dir docs --filename swagger
+    sources:
+      - '{{.API_FILE}}'
+    generates:
+      - docs/swagger.json
+      - internal/types/types.go
+      - internal/handler/routes.go
+
+  deps:
+    desc: Install dependencies and tools
+    cmds:
+      - go mod download
+      - command -v goctl >/dev/null || go install github.com/zeromicro/go-zero/tools/goctl@latest
+
+  # --- Email CLI shortcuts ---
+  list:
+    desc: List available templates
+    cmds:
+      - go run . list -dir=./templates
+
   render:
-    desc: Render a template (usage - task render TEMPLATE=simple)
+    desc: Render template (TEMPLATE=simple OUT=file.html)
     vars:
       TEMPLATE: '{{.TEMPLATE | default "simple"}}'
       OUT: '{{.OUT | default ""}}'
@@ -46,52 +77,22 @@ tasks:
       - go run . render -template={{.TEMPLATE}} {{if .OUT}}-out={{.OUT}}{{end}}
 
   validate:
-    desc: Validate HTML file (usage - task validate FILE=email.html)
-    vars:
-      FILE: '{{.FILE}}'
+    desc: Validate HTML (FILE=email.html)
     cmds:
       - go run . validate -file={{.FILE}}
 
   send:
-    desc: Send test email (usage - task send TO=test@example.com FILE=email.html)
-    vars:
-      TO: '{{.TO}}'
-      FILE: '{{.FILE}}'
+    desc: Send email (TO=user@example.com FILE=email.html)
     cmds:
       - go run . send -to={{.TO}} -file={{.FILE}}
 
-  list:
-    desc: List available templates
+  # --- Cleanup ---
+  clean:
+    desc: Remove build artifacts and data cache
     cmds:
-      - go run . list -dir=./templates
+      - rm -rf {{.BIN_DIR}} {{.DATA_DIR}}
 
-  # Server
-  server:
-    desc: Run MCP server
+  kill-ports:
+    desc: Kill processes on ports 8080/8081/8082
     cmds:
-      - go run ./cmd/server
-
-  # Development
-  test:
-    desc: Run all tests
-    cmds:
-      - go test ./...
-
-  generate:
-    desc: Generate code (templ, goctl)
-    cmds:
-      - templ generate
-
-  # Data management
-  clean:data:
-    desc: Clean data cache directory
-    cmds:
-      - rm -rf {{.DATA_DIR}}
-
-  # Port management
-  kill:ports:
-    desc: Kill processes on server ports (8080, 8081)
-    cmds:
-      - lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-      - lsof -ti:8081 | xargs kill -9 2>/dev/null || true
-      - echo "Ports 8080 and 8081 cleared"
+      - lsof -ti:8080,8081,8082 | xargs kill -9 2>/dev/null || true

@@ -15,11 +15,6 @@ type Registry struct {
 	data map[string]FontInfo
 }
 
-// NewRegistry creates a new font registry using the default font path.
-func NewRegistry() *Registry {
-	return NewRegistryAt(filepath.Join(GetLocalFontPath(), RegistryFilename))
-}
-
 // NewRegistryAt creates a new font registry at the specified path.
 func NewRegistryAt(path string) *Registry {
 	r := &Registry{

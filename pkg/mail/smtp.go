@@ -4,7 +4,6 @@ package mail
 import (
 	"fmt"
 	"net/smtp"
-	"os"
 )
 
 // Config holds configuration for sending emails via SMTP.
@@ -44,15 +43,3 @@ func Send(config Config, toEmail, subject, htmlBody string) error {
 	)
 }
 
-// GmailConfig returns a pre-configured Config for Gmail SMTP.
-// Requires GMAIL_USERNAME and GMAIL_APP_PASSWORD environment variables.
-func GmailConfig() Config {
-	return Config{
-		SMTPHost:  "smtp.gmail.com",
-		SMTPPort:  "587",
-		Username:  os.Getenv("GMAIL_USERNAME"),
-		Password:  os.Getenv("GMAIL_APP_PASSWORD"),
-		FromEmail: os.Getenv("GMAIL_USERNAME"),
-		FromName:  "MJML Email",
-	}
-}

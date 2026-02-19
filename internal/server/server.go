@@ -4,6 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"net/http"
+
+	"github.com/joeblew999/plat-mjml/internal/errorx"
+	"github.com/joeblew999/plat-mjml/internal/handler"
+	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/ui"
 	"github.com/joeblew999/plat-mjml/pkg/db"
 	"github.com/joeblew999/plat-mjml/pkg/delivery"
@@ -11,6 +16,7 @@ import (
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
 	gomjml "github.com/preslavrachev/gomjml/mjml"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/proc"
 	"github.com/zeromicro/go-zero/core/service"
@@ -26,12 +32,16 @@ type Server struct {
 
 // New creates a new server instance.
 func New(c Config) (*Server, error) {
+	// Register global error handler for proper HTTP status codes
+	errorx.RegisterErrorHandler()
+
 	// Create MCP server
 	mcpServer := mcp.NewMcpServer(c.McpConf)
 
 	// Create MJML renderer
 	renderer := mjml.NewRenderer(
 		mjml.WithTemplateDir(c.Templates.Dir),
+		mjml.WithFontDir(c.Fonts.Dir),
 		mjml.WithCache(true),
 	)
 
@@ -71,13 +81,20 @@ func New(c Config) (*Server, error) {
 		RateLimit:    c.Delivery.RateLimit,
 	}
 
-	smtpConfig := mail.GmailConfig()
+	smtpConfig := mail.Config{
+		SMTPHost:  c.SMTP.Host,
+		SMTPPort:  c.SMTP.Port,
+		Username:  c.SMTP.Username,
+		Password:  c.SMTP.Password,
+		FromEmail: c.SMTP.FromEmail,
+		FromName:  c.SMTP.FromName,
+	}
 	deliveryEngine := delivery.NewEngine(emailQueue, renderer, smtpConfig, deliveryConfig)
 
 	// Register MCP tools
 	RegisterMCPTools(mcpServer, renderer, emailQueue)
 
-	// Create UI rest server
+	// Create UI rest server (Datastar web UI)
 	uiServer, err := rest.NewServer(c.UI.RestConf)
 	if err != nil {
 		database.Close()
@@ -88,6 +105,23 @@ func New(c Config) (*Server, error) {
 	uiServer.AddRoutes(uiHandlers.Routes())
 	uiServer.AddRoutes(uiHandlers.SSERoutes(), rest.WithSSE())
 
+	// Create API rest server (goctl-generated JSON REST API)
+	apiServer, err := rest.NewServer(c.API.RestConf)
+	if err != nil {
+		database.Close()
+		return nil, fmt.Errorf("failed to create API server: %w", err)
+	}
+
+	apiCtx := svc.NewServiceContext(renderer, emailQueue)
+	handler.RegisterHandlers(apiServer, apiCtx)
+
+	// Expose Prometheus metrics endpoint
+	apiServer.AddRoute(rest.Route{
+		Method:  http.MethodGet,
+		Path:    "/metrics",
+		Handler: promhttp.Handler().ServeHTTP,
+	})
+
 	// Register cleanup via proc shutdown listeners
 	proc.AddShutdownListener(func() {
 		logx.Info("Closing database")
@@ -97,15 +131,17 @@ func New(c Config) (*Server, error) {
 		gomjml.StopASTCacheCleanup()
 	})
 
-	// Build service group: delivery + UI + MCP (stopped in reverse order)
+	// Build service group: delivery + UI + API + MCP (stopped in reverse order)
 	group := service.NewServiceGroup()
 	group.Add(newDeliveryService(deliveryEngine, 2))
 	group.Add(uiServer)
+	group.Add(apiServer)
 	group.Add(mcpServer)
 
 	logx.Infow("plat-mjml server configured",
 		logx.Field("mcp", fmt.Sprintf("http://%s:%d/sse", c.Host, c.Port)),
 		logx.Field("ui", fmt.Sprintf("http://%s:%d", c.UI.Host, c.UI.Port)),
+		logx.Field("api", fmt.Sprintf("http://%s:%d/api/v1", c.API.Host, c.API.Port)),
 		logx.Field("templates", c.Templates.Dir),
 		logx.Field("database", c.Database.Path),
 	)

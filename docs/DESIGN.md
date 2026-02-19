@@ -35,7 +35,7 @@ pkg/mjml/
 ### Service
 - **Purpose**: Infrastructure integration layer
 - **Features**: Lifecycle management, logging, health checks
-- **Integration**: Works with pkg/config for paths
+- **Integration**: Receives paths via constructor injection from server config
 
 ### Templates
 - **Purpose**: Predefined email templates for common use cases
@@ -64,7 +64,7 @@ Template Data → Go Template → MJML → gomjml → Responsive HTML
 ### API Patterns
 ```go
 // Service-level API
-service := mjml.NewService()
+service := mjml.NewService("./templates")
 html, err := service.RenderEmail("welcome", welcomeData)
 
 // Direct rendering for AI agents
@@ -171,8 +171,8 @@ service := mjml.NewServiceWithOptions(
 - `sync` - Thread-safe operations
 
 ### Infrastructure Dependencies
-- `pkg/config` - Configuration management
-- `pkg/log` - Structured logging
+- `go-zero/core/conf` - Configuration with env var expansion
+- `go-zero/core/logx` - Structured logging
 - File system access for template loading
 
 ## Testing

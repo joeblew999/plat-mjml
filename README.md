@@ -5,11 +5,13 @@ MJML email template platform with MCP integration for AI assistants.
 ## Features
 
 - **MCP Server** — 4 tools for Claude to render templates, send emails, and check delivery status
+- **REST API** — goctl-generated JSON API with Swagger docs (`/api/v1/*`)
 - **Web UI** — Datastar-based dashboard for email management
 - **Email Queue** — SQLite-backed queue with retry and exponential backoff
 - **Google Fonts** — CDN-based font integration for email templates
 - **CLI Tool** — Render, validate, and send emails from the terminal
 - **Go Library** — Embed template rendering in your own Go services
+- **Docker** — goctl-generated Dockerfile for containerized deployment
 
 ## Quick Start
 
@@ -27,9 +29,11 @@ cd plat-mjml
 go run ./cmd/server
 ```
 
-This starts two services:
+This starts four services in a single process via go-zero ServiceGroup:
 - **MCP server** on `http://localhost:8080/sse`
 - **Web UI** on `http://localhost:8081`
+- **REST API** on `http://localhost:8082/api/v1`
+- **Delivery engine** — background email processing with retry/backoff
 
 ### 2. Connect to Claude
 
@@ -105,6 +109,63 @@ Claude: [Calls get_email_status with id="abc123"]
 
 The email is currently in "processing" status. It's been attempted once
 and is being delivered now.
+```
+
+## REST API
+
+The REST API runs on port 8082 as a goctl-generated service. The API contract is defined in [`api/plat-mjml.api`](api/plat-mjml.api) — edit this file, run `task generate`, and goctl regenerates handlers, types, routes, and Swagger docs.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/templates` | List all templates |
+| `GET` | `/api/v1/templates/:slug` | Get template info |
+| `GET` | `/api/v1/templates/:slug/render` | Render template to HTML |
+| `POST` | `/api/v1/emails` | Queue an email for delivery |
+| `GET` | `/api/v1/emails/:id` | Get email delivery status |
+| `GET` | `/api/v1/emails?status=pending&limit=50` | List queued emails |
+| `GET` | `/api/v1/stats` | Get queue statistics |
+
+### Examples
+
+```bash
+# List templates
+curl http://localhost:8082/api/v1/templates
+
+# Render a template
+curl http://localhost:8082/api/v1/templates/welcome/render
+
+# Send an email
+curl -X POST http://localhost:8082/api/v1/emails \
+  -H 'Content-Type: application/json' \
+  -d '{"template":"welcome","to":["user@example.com"],"subject":"Hello"}'
+
+# Check status
+curl http://localhost:8082/api/v1/emails/<id>
+
+# Queue stats
+curl http://localhost:8082/api/v1/stats
+```
+
+Swagger documentation is available at [docs/swagger.json](docs/swagger.json).
+
+### goctl Code Generation Workflow
+
+```bash
+# 1. Edit the API contract
+vim api/plat-mjml.api
+
+# 2. Regenerate (validates, generates code + Swagger)
+task generate
+
+# goctl regenerates:
+#   internal/types/types.go    — request/response structs (DO NOT EDIT)
+#   internal/handler/routes.go — route registration (DO NOT EDIT)
+#   docs/swagger.json          — OpenAPI 2.0 spec
+#
+# goctl preserves (Safe to edit):
+#   internal/handler/*/        — handler stubs (scaffolded once)
+#   internal/logic/*/          — business logic (your code lives here)
+#   internal/svc/              — service context (dependency injection)
 ```
 
 ## Email Delivery Setup
@@ -188,10 +249,17 @@ html, err := renderer.RenderTemplate("welcome", map[string]any{
 
 ```
 ├── main.go              # CLI entry point
-├── cmd/server/          # MCP + Web UI server
+├── cmd/server/          # Server startup (MCP + UI + API + delivery)
+├── api/
+│   └── plat-mjml.api    # goctl API definition (source of truth)
 ├── internal/
-│   ├── server/          # MCP tools, config, startup
-│   └── ui/              # Datastar web UI (gomponents)
+│   ├── config/          # goctl-generated API config
+│   ├── handler/         # goctl-generated HTTP handlers + routes
+│   ├── logic/           # Business logic (safe to edit)
+│   ├── svc/             # Service context — dependency injection
+│   ├── types/           # goctl-generated request/response types
+│   ├── server/          # MCP tools, config, startup, ServiceGroup
+│   └── ui/              # Datastar web UI (gomponents + SSE)
 ├── pkg/
 │   ├── mjml/            # MJML rendering, templates, font integration
 │   ├── font/            # Google Fonts download + CDN URL capture
@@ -202,7 +270,8 @@ html, err := renderer.RenderTemplate("welcome", map[string]any{
 │   └── config/          # Path configuration
 ├── templates/           # MJML email templates
 ├── config.yaml          # Server configuration
-└── docs/                # ADRs, screenshots
+├── Dockerfile           # goctl-generated Docker build
+└── docs/                # ADRs, Swagger, screenshots
 ```
 
 ## Configuration
@@ -218,8 +287,14 @@ ui:
   host: 0.0.0.0
   port: 8081
 
+api:
+  name: plat-mjml-api
+  host: 0.0.0.0
+  port: 8082
+
 mcp:
   name: mjml-server
+  version: "1.0.0"
   messageTimeout: 30s
 
 templates:
@@ -248,16 +323,17 @@ delivery:
 ## Task Commands
 
 ```bash
-task server       # Start MCP server + Web UI
-task test         # Run all tests
-task list         # List templates
-task render       # Render template
-task validate     # Validate HTML
-task send         # Send email
-task build        # Build server binary
-task build:cli    # Build CLI binary
-task clean:data   # Remove .data/ cache
-task kill:ports   # Kill processes on 8080/8081
+task server     # Start server (kills stale ports first)
+task build      # Build all binaries (skips if up-to-date)
+task test       # Run all tests
+task generate   # Regenerate API code + Swagger from .api file
+task deps       # Install tools (skips if already installed)
+task list       # List templates
+task render     # Render template
+task validate   # Validate HTML
+task send       # Send email
+task clean      # Remove build artifacts + data cache
+task kill-ports # Kill processes on 8080/8081/8082
 ```
 
 ## Architecture
@@ -267,6 +343,7 @@ See [ADR-001](docs/adr/001-email-platform-architecture.md) for detailed architec
 ## Acknowledgements
 
 - [gomjml](https://github.com/preslavrachev/gomjml) by [Preslav Rachev](https://github.com/preslavrachev) — Pure Go MJML renderer. No Node.js required.
-- [go-zero](https://github.com/zeromicro/go-zero) by [Kevin Wan](https://github.com/kevwan) — Cloud-native Go microservices framework. Powers MCP server, Web UI (rest.Server), service lifecycle (ServiceGroup), graceful shutdown, and structured logging (logx).
+- [go-zero](https://github.com/zeromicro/go-zero) by [Kevin Wan](https://github.com/kevwan) — Cloud-native Go microservices framework. Powers MCP server, REST API (goctl-generated handler/logic pattern + Swagger), Web UI (rest.Server), service lifecycle (ServiceGroup), graceful shutdown, structured logging (logx), and Docker builds.
+- [goctl](https://github.com/zeromicro/go-zero/tree/master/tools/goctl) — go-zero code generator. Generates REST API handlers, types, routes, and Swagger docs from `.api` file definition.
 - [goqite](https://maragu.dev/goqite) by [Markus Wüstenberg](https://github.com/maragudk) — SQLite-backed persistent message queue.
 - [gomponents](https://maragu.dev/gomponents) + [gomponents-datastar](https://maragu.dev/gomponents-datastar) — Go HTML components with Datastar integration.

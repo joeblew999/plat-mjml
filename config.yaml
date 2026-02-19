@@ -7,6 +7,11 @@ ui:
   host: 0.0.0.0
   port: 8081
 
+api:
+  name: plat-mjml-api
+  host: 0.0.0.0
+  port: 8082
+
 mcp:
   name: mjml-server
   version: "1.0.0"
@@ -14,6 +19,9 @@ mcp:
 
 templates:
   dir: ./templates
+
+fonts:
+  dir: ./.data/fonts
 
 database:
   path: ./.data/plat-mjml.db
@@ -23,3 +31,11 @@ delivery:
   retryBackoff: 5m
   maxBackoff: 4h
   rateLimit: 60
+
+smtp:
+  host: smtp.gmail.com
+  port: "587"
+  username: ${GMAIL_USERNAME}
+  password: ${GMAIL_APP_PASSWORD}
+  fromEmail: ${GMAIL_USERNAME}
+  fromName: MJML Email

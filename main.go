@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/joeblew999/plat-mjml/pkg/mail"
@@ -163,8 +162,15 @@ func sendCmd(args []string) {
 		os.Exit(1)
 	}
 
-	config := mail.GmailConfig()
-	if config.Username == "" || config.Password == "" {
+	smtpCfg := mail.Config{
+		SMTPHost:  "smtp.gmail.com",
+		SMTPPort:  "587",
+		Username:  os.Getenv("GMAIL_USERNAME"),
+		Password:  os.Getenv("GMAIL_APP_PASSWORD"),
+		FromEmail: os.Getenv("GMAIL_USERNAME"),
+		FromName:  "MJML Email",
+	}
+	if smtpCfg.Username == "" || smtpCfg.Password == "" {
 		fmt.Println("Error: GMAIL_USERNAME and GMAIL_APP_PASSWORD environment variables required")
 		os.Exit(1)
 	}
@@ -175,7 +181,7 @@ func sendCmd(args []string) {
 		os.Exit(1)
 	}
 
-	if err := mail.Send(config, *to, *subject, string(content)); err != nil {
+	if err := mail.Send(smtpCfg, *to, *subject, string(content)); err != nil {
 		fmt.Printf("Error sending email: %v\n", err)
 		os.Exit(1)
 	}
@@ -221,14 +227,3 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-func init() {
-	// Ensure template path defaults work
-	if os.Getenv("MJML_TEMPLATE_PATH") == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			defaultPath := filepath.Join(cwd, "templates")
-			if _, err := os.Stat(defaultPath); err == nil {
-				os.Setenv("MJML_TEMPLATE_PATH", defaultPath)
-			}
-		}
-	}
-}

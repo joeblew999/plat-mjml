@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/joeblew999/plat-mjml/pkg/config"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -33,16 +32,6 @@ type Manager struct {
 	registry *Registry
 }
 
-// GetLocalFontPath returns the font cache path (environment-aware via config)
-func GetLocalFontPath() string {
-	return config.GetFontPath()
-}
-
-// GetLocalFontPathForFamily returns the path for a specific font family
-func GetLocalFontPathForFamily(family string) string {
-	return config.GetFontPathForFamily(family)
-}
-
 // newFont creates a Font struct with defaults
 func newFont(family string, weight int, format string) Font {
 	return Font{
@@ -58,13 +47,7 @@ func newDefaultFont(family string, weight int) Font {
 	return newFont(family, weight, DefaultFontFormat)
 }
 
-// NewManager creates a new font manager using the default cache path (environment-aware via config).
-func NewManager() *Manager {
-	return NewManagerWithDir(GetLocalFontPath())
-}
-
 // NewManagerWithDir creates a new font manager with an explicit cache directory.
-// Use this in tests with t.TempDir() to avoid polluting the source tree.
 func NewManagerWithDir(cacheDir string) *Manager {
 	registryPath := filepath.Join(cacheDir, RegistryFilename)
 	return &Manager{

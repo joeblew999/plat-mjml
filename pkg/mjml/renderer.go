@@ -17,9 +17,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/preslavrachev/gomjml/mjml"
-	"github.com/joeblew999/plat-mjml/pkg/config"
 	"github.com/joeblew999/plat-mjml/pkg/font"
+	"github.com/preslavrachev/gomjml/mjml"
 )
 
 // Renderer handles MJML template loading, caching, and rendering
@@ -92,7 +91,7 @@ func NewRenderer(opts ...RendererOption) *Renderer {
 		EnableCache:      false,
 		EnableDebug:      false,
 		EnableValidation: true,
-		TemplateDir:      config.GetMjmlTemplatePath(),
+		TemplateDir:      "./templates",
 		EnableFonts:      true,
 	}
 	
@@ -108,11 +107,11 @@ func NewRenderer(opts ...RendererOption) *Renderer {
 
 	// Initialize font manager if fonts are enabled
 	if options.EnableFonts {
-		if options.FontDir != "" {
-			renderer.fontManager = font.NewManagerWithDir(options.FontDir)
-		} else {
-			renderer.fontManager = font.NewManager()
+		fontDir := options.FontDir
+		if fontDir == "" {
+			fontDir = "./.data/fonts"
 		}
+		renderer.fontManager = font.NewManagerWithDir(fontDir)
 	}
 
 	return renderer

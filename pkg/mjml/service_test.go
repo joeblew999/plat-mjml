@@ -6,7 +6,7 @@ import (
 )
 
 func TestServiceIntegration(t *testing.T) {
-	service := NewService()
+	service := NewService("./templates")
 	if service == nil {
 		t.Fatal("Service creation failed")
 	}
@@ -54,7 +54,7 @@ func TestServiceIntegration(t *testing.T) {
 }
 
 func TestServiceConcurrency(t *testing.T) {
-	service := NewService()
+	service := NewService("./templates")
 	if service == nil {
 		t.Fatal("Service creation failed")
 	}

@@ -3,7 +3,6 @@ package mjml
 import (
 	"fmt"
 
-	"github.com/joeblew999/plat-mjml/pkg/config"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -13,10 +12,8 @@ type Service struct {
 	templateDir string
 }
 
-// NewService creates a new MJML service with default configuration
-func NewService() *Service {
-	templateDir := config.GetMjmlTemplatePath()
-	
+// NewService creates a new MJML service with the given template directory.
+func NewService(templateDir string) *Service {
 	renderer := NewRenderer(
 		WithCache(true),
 		WithDebug(false),

@@ -49,5 +49,13 @@ registry.json
 .pc.log
 .pc.sock
 
+# goctl generated artifacts (cleaned up by task generate)
+etc/
+mjml.go
+internal/config/
+
+# Task runner cache
+.task/
+
 # Generated HTML
 *.html
