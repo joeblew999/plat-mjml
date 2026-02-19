@@ -58,7 +58,8 @@ tasks:
     cmds:
       - goctl api validate --api {{.API_FILE}}
       - goctl api go --api {{.API_FILE}} --dir . --style gozero
-      - rm -f mjml.go && rm -rf etc/
+      - rm -f mjml.go
+      - git checkout -- internal/config/config.go etc/ 2>/dev/null || true
       - goctl api swagger --api {{.API_FILE}} --dir docs --filename swagger
     sources:
       - '{{.API_FILE}}'

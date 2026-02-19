@@ -1,4 +1,4 @@
-package server
+package config
 
 import (
 	"github.com/zeromicro/go-zero/mcp"

@@ -6,6 +6,7 @@ import (
 
 	"net/http"
 
+	"github.com/joeblew999/plat-mjml/internal/config"
 	"github.com/joeblew999/plat-mjml/internal/errorx"
 	"github.com/joeblew999/plat-mjml/internal/handler"
 	"github.com/joeblew999/plat-mjml/internal/svc"
@@ -28,12 +29,12 @@ import (
 
 // Server wraps the MCP server and email platform services.
 type Server struct {
-	config Config
+	config config.Config
 	group  *service.ServiceGroup
 }
 
 // New creates a new server instance.
-func New(c Config) (*Server, error) {
+func New(c config.Config) (*Server, error) {
 	// Register global error handler for proper HTTP status codes
 	errorx.RegisterErrorHandler()
 
@@ -119,7 +120,7 @@ func New(c Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to create API server: %w", err)
 	}
 
-	apiCtx := svc.NewServiceContext(renderer, emailQueue)
+	apiCtx := svc.NewServiceContext(c, renderer, emailQueue)
 	handler.RegisterHandlers(apiServer, apiCtx)
 
 	// Expose Prometheus metrics endpoint

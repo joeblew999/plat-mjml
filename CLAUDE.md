@@ -31,15 +31,16 @@ task build        # Build server + CLI binaries
 
 ```
 api/plat-mjml.api          # API spec (source of truth for REST endpoints)
+etc/plat-mjml.yaml         # Config file (go-zero standard)
 cmd/server/main.go         # Server entry point
 internal/
-  config/config.go         # Config struct (embeds rest.RestConf)
+  config/config.go         # Config struct (go-zero standard location)
   handler/                 # HTTP handlers (goctl generated — DO NOT EDIT)
   logic/                   # Business logic (goctl generated — safe to edit)
   model/                   # DB models (goctl generated from schema/)
-  svc/servicecontext.go    # Dependency injection
+  svc/servicecontext.go    # Dependency injection (holds Config + deps)
   types/types.go           # Request/response types (goctl generated)
-  server/                  # Server orchestration (MCP, delivery, config)
+  server/                  # Server orchestration (MCP, delivery wiring)
   ui/                      # Datastar web UI handlers
   errorx/                  # Error handling
 pkg/
