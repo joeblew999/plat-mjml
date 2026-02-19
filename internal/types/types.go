@@ -53,9 +53,10 @@ type RenderTemplateResponse struct {
 }
 
 type SendEmailRequest struct {
-	Template string   `json:"template"`
-	To       []string `json:"to"`
-	Subject  string   `json:"subject"`
+	Template string            `json:"template"`
+	To       []string          `json:"to"`
+	Subject  string            `json:"subject"`
+	Data     map[string]string `json:"data,optional"`
 }
 
 type SendEmailResponse struct {

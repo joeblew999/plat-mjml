@@ -9,21 +9,30 @@ vars:
   API_FILE: api/plat-mjml.api
 
 tasks:
-  # --- Run ---
-  server:
-    desc: Start MCP server + Web UI + REST API
-    deps: [kill-ports]
+  # --- Development ---
+  dev:
+    desc: Start server (kills stale ports first)
+    deps: [kill:ports]
     cmds:
       - go run ./cmd/server
 
   run:
-    desc: Run CLI (usage - task run -- render -template=simple)
+    desc: Run CLI (usage — task run -- render -template=simple)
     cmds:
       - go run . {{.CLI_ARGS}}
 
-  # --- Build ---
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
   build:
-    desc: Build all binaries
+    desc: Build server and CLI binaries
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - go build -o {{.BIN_DIR}}/server ./cmd/server
@@ -36,14 +45,16 @@ tasks:
       - '{{.BIN_DIR}}/server'
       - '{{.BIN_DIR}}/plat-mjml'
 
-  # --- Development ---
-  test:
-    desc: Run all tests
+  check:
+    desc: Run lint + test + build
     cmds:
-      - go test ./...
+      - task: lint
+      - task: test
+      - task: build
 
-  generate:
-    desc: Regenerate API code, types, and Swagger docs from .api file
+  # --- Code Generation ---
+  gen:
+    desc: Regenerate API handlers, types, and swagger from .api file
     cmds:
       - goctl api validate --api {{.API_FILE}}
       - goctl api go --api {{.API_FILE}} --dir . --style gozero
@@ -56,35 +67,32 @@ tasks:
       - internal/types/types.go
       - internal/handler/routes.go
 
-  deps:
+  gen:model:
+    desc: Regenerate go-zero models from SQLite DDL schemas
+    cmds:
+      - goctl model mysql ddl --src schema/templates.sql --dir internal/model --home ./goctl-sqlite --style gozero
+      - goctl model mysql ddl --src schema/emails.sql --dir internal/model --home ./goctl-sqlite --style gozero
+      - goctl model mysql ddl --src schema/email_events.sql --dir internal/model --home ./goctl-sqlite --style gozero
+      - goctl model mysql ddl --src schema/smtp_providers.sql --dir internal/model --home ./goctl-sqlite --style gozero
+
+  gen:all:
+    desc: Regenerate everything (API + models + swagger)
+    deps: [gen, gen:model]
+
+  gen:template:init:
+    desc: Initialize goctl SQLite custom templates
+    cmds:
+      - goctl template init --home ./goctl-sqlite
+    status:
+      - test -d ./goctl-sqlite
+
+  # --- Setup ---
+  setup:
     desc: Install dependencies and tools
     cmds:
       - go mod download
       - command -v goctl >/dev/null || go install github.com/zeromicro/go-zero/tools/goctl@latest
-
-  # --- Email CLI shortcuts ---
-  list:
-    desc: List available templates
-    cmds:
-      - go run . list -dir=./templates
-
-  render:
-    desc: Render template (TEMPLATE=simple OUT=file.html)
-    vars:
-      TEMPLATE: '{{.TEMPLATE | default "simple"}}'
-      OUT: '{{.OUT | default ""}}'
-    cmds:
-      - go run . render -template={{.TEMPLATE}} {{if .OUT}}-out={{.OUT}}{{end}}
-
-  validate:
-    desc: Validate HTML (FILE=email.html)
-    cmds:
-      - go run . validate -file={{.FILE}}
-
-  send:
-    desc: Send email (TO=user@example.com FILE=email.html)
-    cmds:
-      - go run . send -to={{.TO}} -file={{.FILE}}
+      - goctl env check --install --verbose
 
   # --- Cleanup ---
   clean:
@@ -92,7 +100,7 @@ tasks:
     cmds:
       - rm -rf {{.BIN_DIR}} {{.DATA_DIR}}
 
-  kill-ports:
+  kill:ports:
     desc: Kill processes on ports 8080/8081/8082
     cmds:
       - lsof -ti:8080,8081,8082 | xargs kill -9 2>/dev/null || true

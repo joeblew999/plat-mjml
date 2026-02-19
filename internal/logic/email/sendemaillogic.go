@@ -29,10 +29,20 @@ func NewSendEmailLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SendEma
 }
 
 func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.SendEmailResponse, err error) {
+	// Convert map[string]string to map[string]any for template data
+	var data map[string]any
+	if len(req.Data) > 0 {
+		data = make(map[string]any, len(req.Data))
+		for k, v := range req.Data {
+			data[k] = v
+		}
+	}
+
 	job := queue.EmailJob{
 		TemplateSlug: req.Template,
 		Recipients:   req.To,
 		Subject:      req.Subject,
+		Data:         data,
 		Priority:     queue.PriorityNormal,
 	}
 

@@ -9,23 +9,37 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/zeromicro/go-zero/core/breaker"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// fontBreaker prevents cascading failures when Google Fonts API is down.
+var fontBreaker = breaker.NewBreaker()
+
 // Uses GoogleFontsAPI from consts.go
 
-// downloadGoogleFont downloads a font from Google Fonts and returns the CDN URL
-func downloadGoogleFont(font Font, path string) (cdnURL string, err error) {
-	// For TTF format, try direct API first
-	if font.Format == "ttf" {
-		if url, dlErr := tryDirectTTFDownload(font, path); dlErr == nil {
-			return url, nil
+// downloadGoogleFont downloads a font from Google Fonts and returns the CDN URL.
+// Protected by a circuit breaker to prevent cascading failures when the API is down.
+func downloadGoogleFont(f Font, path string) (cdnURL string, err error) {
+	err = fontBreaker.DoWithAcceptable(func() error {
+		// For TTF format, try direct API first
+		if f.Format == "ttf" {
+			if url, dlErr := tryDirectTTFDownload(f, path); dlErr == nil {
+				cdnURL = url
+				return nil
+			}
+			logx.Infow("Direct TTF API failed, trying CSS method", logx.Field("family", f.Family))
 		}
-		logx.Infow("Direct TTF API failed, trying CSS method", logx.Field("family", font.Family))
-	}
 
-	// Fallback to CSS method
-	return tryCSSDownload(font, path)
+		// Fallback to CSS method
+		var e error
+		cdnURL, e = tryCSSDownload(f, path)
+		return e
+	}, func(err error) bool {
+		// Don't trip breaker for 404s (font not found is permanent, not transient)
+		return err != nil && !strings.Contains(err.Error(), "404")
+	})
+	return cdnURL, err
 }
 
 // tryDirectTTFDownload attempts to download TTF using direct API

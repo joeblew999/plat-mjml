@@ -1,4 +1,7 @@
-// Package queue provides email queue operations using goqite.
+// Package queue provides email queue operations using go-zero sqlx.
+// All queue state is managed through the emails table directly — no external
+// queue dependency required. Circuit breaking and OpenTelemetry tracing are
+// automatic via sqlx.SqlConn.
 package queue
 
 import (
@@ -9,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"maragu.dev/goqite"
+	"github.com/zeromicro/go-zero/core/stores/sqlx"
 )
 
 // Priority levels for email delivery.
@@ -35,32 +38,19 @@ type EmailJob struct {
 	CreatedAt    time.Time      `json:"created_at"`
 }
 
-// Queue manages email jobs using goqite.
+// Queue manages email jobs using go-zero sqlx directly on the emails table.
 type Queue struct {
-	db      *sql.DB
-	queue   *goqite.Queue
-	name    string
-	workers int
+	conn   sqlx.SqlConn
+	Events *EventRecorder
 }
 
-// NewQueue creates a new email queue.
-// The goqite table must be created by db.Migrate() before calling this.
-func NewQueue(db *sql.DB, name string, workers int) (*Queue, error) {
-	q := goqite.New(goqite.NewOpts{
-		DB:        db,
-		Name:      name,
-		SQLFlavor: goqite.SQLFlavorSQLite,
-	})
-
-	return &Queue{
-		db:      db,
-		queue:   q,
-		name:    name,
-		workers: workers,
-	}, nil
+// NewQueue creates a new email queue backed by go-zero sqlx.
+func NewQueue(conn sqlx.SqlConn) *Queue {
+	events, _ := NewEventRecorder(conn)
+	return &Queue{conn: conn, Events: events}
 }
 
-// Enqueue adds an email job to the queue.
+// Enqueue adds an email job with status 'pending'.
 func (q *Queue) Enqueue(ctx context.Context, job EmailJob) (string, error) {
 	if job.ID == "" {
 		job.ID = uuid.New().String()
@@ -73,28 +63,26 @@ func (q *Queue) Enqueue(ctx context.Context, job EmailJob) (string, error) {
 	}
 	job.CreatedAt = time.Now()
 
-	body, err := json.Marshal(job)
+	recipients, err := json.Marshal(job.Recipients)
 	if err != nil {
-		return "", fmt.Errorf("marshal job: %w", err)
+		return "", fmt.Errorf("marshal recipients: %w", err)
+	}
+	data, err := json.Marshal(job.Data)
+	if err != nil {
+		return "", fmt.Errorf("marshal data: %w", err)
 	}
 
-	// Calculate delay based on scheduled time
-	var delay time.Duration
-	if job.ScheduledAt != nil && job.ScheduledAt.After(time.Now()) {
-		delay = time.Until(*job.ScheduledAt)
+	var scheduledAt sql.NullTime
+	if job.ScheduledAt != nil {
+		scheduledAt = sql.NullTime{Time: *job.ScheduledAt, Valid: true}
 	}
 
-	if err := q.queue.Send(ctx, goqite.Message{
-		Body:     body,
-		Delay:    delay,
-		Priority: job.Priority,
-	}); err != nil {
-		return "", fmt.Errorf("send to queue: %w", err)
-	}
-
-	// Also store in emails table for tracking
-	if err := q.storeEmail(ctx, job); err != nil {
-		return "", fmt.Errorf("store email: %w", err)
+	_, err = q.conn.ExecCtx(ctx,
+		"insert into `emails` (`id`, `template_slug`, `recipients`, `subject`, `data`, `status`, `priority`, `attempts`, `max_attempts`, `scheduled_at`, `created_at`, `updated_at`) values (?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+		job.ID, job.TemplateSlug, string(recipients), job.Subject, string(data),
+		job.Priority, job.MaxAttempts, scheduledAt)
+	if err != nil {
+		return "", fmt.Errorf("enqueue email: %w", err)
 	}
 
 	return job.ID, nil
@@ -106,204 +94,188 @@ func (q *Queue) Schedule(ctx context.Context, job EmailJob, at time.Time) (strin
 	return q.Enqueue(ctx, job)
 }
 
-// Receive gets the next job from the queue.
-func (q *Queue) Receive(ctx context.Context) (*EmailJob, *goqite.Message, error) {
-	msg, err := q.queue.Receive(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if msg == nil {
-		return nil, nil, nil
-	}
-
-	var job EmailJob
-	if err := json.Unmarshal(msg.Body, &job); err != nil {
-		return nil, msg, fmt.Errorf("unmarshal job: %w", err)
-	}
-
-	return &job, msg, nil
+// emailRow is used for sqlx struct scanning.
+type emailRow struct {
+	ID           string         `db:"id"`
+	TemplateSlug string         `db:"template_slug"`
+	Recipients   string         `db:"recipients"`
+	Subject      string         `db:"subject"`
+	Data         sql.NullString `db:"data"`
+	Status       string         `db:"status"`
+	Priority     int            `db:"priority"`
+	Attempts     int            `db:"attempts"`
+	MaxAttempts  int            `db:"max_attempts"`
+	ScheduledAt  sql.NullTime   `db:"scheduled_at"`
+	SentAt       sql.NullTime   `db:"sent_at"`
+	Error        sql.NullString `db:"error"`
+	CreatedAt    time.Time      `db:"created_at"`
 }
 
-// Extend extends the timeout for a message being processed.
-func (q *Queue) Extend(ctx context.Context, msg *goqite.Message, d time.Duration) error {
-	return q.queue.Extend(ctx, msg.ID, d)
+const emailColumns = "`id`, `template_slug`, `recipients`, `subject`, `data`, `status`, `priority`, `attempts`, `max_attempts`, `scheduled_at`, `sent_at`, `error`, `created_at`"
+
+func (r *emailRow) toJob() (*EmailJob, error) {
+	job := &EmailJob{
+		ID:           r.ID,
+		TemplateSlug: r.TemplateSlug,
+		Subject:      r.Subject,
+		Status:       r.Status,
+		Priority:     r.Priority,
+		Attempts:     r.Attempts,
+		MaxAttempts:  r.MaxAttempts,
+		CreatedAt:    r.CreatedAt,
+	}
+
+	if err := json.Unmarshal([]byte(r.Recipients), &job.Recipients); err != nil {
+		return nil, fmt.Errorf("unmarshal recipients: %w", err)
+	}
+	if r.Data.Valid {
+		if err := json.Unmarshal([]byte(r.Data.String), &job.Data); err != nil {
+			return nil, fmt.Errorf("unmarshal data: %w", err)
+		}
+	}
+	if r.Error.Valid {
+		job.Error = r.Error.String
+	}
+	if r.ScheduledAt.Valid {
+		job.ScheduledAt = &r.ScheduledAt.Time
+	}
+
+	return job, nil
 }
 
-// Delete removes a message from the queue (job completed).
-func (q *Queue) Delete(ctx context.Context, msg *goqite.Message) error {
-	return q.queue.Delete(ctx, msg.ID)
+// Receive atomically finds the next pending/retry job and marks it as 'processing'.
+// Uses TransactCtx for atomic SELECT + UPDATE. Returns nil if no jobs available.
+func (q *Queue) Receive(ctx context.Context) (*EmailJob, error) {
+	var row emailRow
+	err := q.conn.TransactCtx(ctx, func(ctx context.Context, session sqlx.Session) error {
+		query := fmt.Sprintf("select %s from `emails` where `status` in ('pending', 'retry') and (`scheduled_at` is null or `scheduled_at` <= datetime('now')) order by `priority` desc, `created_at` asc limit 1", emailColumns)
+		if err := session.QueryRowCtx(ctx, &row, query); err != nil {
+			return err
+		}
+		_, err := session.ExecCtx(ctx,
+			"update `emails` set `status` = 'processing', `updated_at` = CURRENT_TIMESTAMP where `id` = ?",
+			row.ID)
+		return err
+	})
+
+	switch err {
+	case nil:
+		return row.toJob()
+	case sqlx.ErrNotFound:
+		return nil, nil
+	default:
+		return nil, err
+	}
 }
 
 // GetStatus returns the status of an email by ID.
 func (q *Queue) GetStatus(ctx context.Context, id string) (*EmailJob, error) {
-	row := q.db.QueryRowContext(ctx, `
-		SELECT id, template_slug, recipients, subject, data, status,
-		       priority, attempts, max_attempts, scheduled_at, sent_at, error, created_at
-		FROM emails WHERE id = ?
-	`, id)
-
-	var job EmailJob
-	var recipients, data string
-	var scheduledAt, sentAt sql.NullTime
-	var errStr sql.NullString
-
-	err := row.Scan(
-		&job.ID, &job.TemplateSlug, &recipients, &job.Subject, &data,
-		&job.Status, &job.Priority, &job.Attempts, &job.MaxAttempts,
-		&scheduledAt, &sentAt, &errStr, &job.CreatedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
+	var row emailRow
+	query := fmt.Sprintf("select %s from `emails` where `id` = ? limit 1", emailColumns)
+	err := q.conn.QueryRowCtx(ctx, &row, query, id)
+	switch err {
+	case nil:
+		return row.toJob()
+	case sqlx.ErrNotFound:
+		return nil, nil
+	default:
 		return nil, err
 	}
-
-	if err := json.Unmarshal([]byte(recipients), &job.Recipients); err != nil {
-		return nil, fmt.Errorf("unmarshal recipients: %w", err)
-	}
-	if err := json.Unmarshal([]byte(data), &job.Data); err != nil {
-		return nil, fmt.Errorf("unmarshal data: %w", err)
-	}
-	if errStr.Valid {
-		job.Error = errStr.String
-	}
-	if scheduledAt.Valid {
-		job.ScheduledAt = &scheduledAt.Time
-	}
-
-	return &job, nil
 }
 
-// UpdateStatus updates the status of an email.
+// UpdateStatus updates the status of an email, incrementing attempts.
 func (q *Queue) UpdateStatus(ctx context.Context, id, status string, err error) error {
 	var errStr sql.NullString
 	if err != nil {
 		errStr = sql.NullString{String: err.Error(), Valid: true}
 	}
-
-	_, dbErr := q.db.ExecContext(ctx, `
-		UPDATE emails
-		SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP,
-		    attempts = attempts + 1
-		WHERE id = ?
-	`, status, errStr, id)
+	_, dbErr := q.conn.ExecCtx(ctx,
+		"update `emails` set `status` = ?, `error` = ?, `attempts` = `attempts` + 1, `updated_at` = CURRENT_TIMESTAMP where `id` = ?",
+		status, errStr, id)
 	return dbErr
 }
 
 // MarkSent marks an email as successfully sent.
 func (q *Queue) MarkSent(ctx context.Context, id, messageID string) error {
-	_, err := q.db.ExecContext(ctx, `
-		UPDATE emails
-		SET status = 'sent', sent_at = CURRENT_TIMESTAMP,
-		    message_id = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, messageID, id)
+	_, err := q.conn.ExecCtx(ctx,
+		"update `emails` set `status` = 'sent', `sent_at` = CURRENT_TIMESTAMP, `message_id` = ?, `updated_at` = CURRENT_TIMESTAMP where `id` = ?",
+		messageID, id)
 	return err
 }
 
-// List returns jobs from the queue with optional status filter.
+// MarkRetry schedules an email for retry after a backoff delay.
+func (q *Queue) MarkRetry(ctx context.Context, id string, backoff time.Duration, err error) error {
+	retryAt := time.Now().Add(backoff)
+	var errStr sql.NullString
+	if err != nil {
+		errStr = sql.NullString{String: err.Error(), Valid: true}
+	}
+	_, dbErr := q.conn.ExecCtx(ctx,
+		"update `emails` set `status` = 'retry', `error` = ?, `attempts` = `attempts` + 1, `scheduled_at` = ?, `updated_at` = CURRENT_TIMESTAMP where `id` = ?",
+		errStr, retryAt, id)
+	return dbErr
+}
+
+// MarkFailed marks an email as permanently failed.
+func (q *Queue) MarkFailed(ctx context.Context, id string, err error) error {
+	var errStr sql.NullString
+	if err != nil {
+		errStr = sql.NullString{String: err.Error(), Valid: true}
+	}
+	_, dbErr := q.conn.ExecCtx(ctx,
+		"update `emails` set `status` = 'failed', `error` = ?, `attempts` = `attempts` + 1, `updated_at` = CURRENT_TIMESTAMP where `id` = ?",
+		errStr, id)
+	return dbErr
+}
+
+// List returns jobs with optional status filter.
 func (q *Queue) List(ctx context.Context, status string, limit int) ([]*EmailJob, error) {
-	query := `
-		SELECT id, template_slug, recipients, subject, data, status,
-		       priority, attempts, max_attempts, scheduled_at, sent_at, error, created_at
-		FROM emails
-	`
-	args := []any{}
+	var rows []*emailRow
+	var query string
+	var args []any
 
 	if status != "" && status != "all" {
-		query += " WHERE status = ?"
-		args = append(args, status)
+		query = fmt.Sprintf("select %s from `emails` where `status` = ? order by `created_at` desc limit ?", emailColumns)
+		args = []any{status, limit}
+	} else {
+		query = fmt.Sprintf("select %s from `emails` order by `created_at` desc limit ?", emailColumns)
+		args = []any{limit}
 	}
 
-	query += " ORDER BY created_at DESC LIMIT ?"
-	args = append(args, limit)
-
-	rows, err := q.db.QueryContext(ctx, query, args...)
+	err := q.conn.QueryRowsCtx(ctx, &rows, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var jobs []*EmailJob
-	for rows.Next() {
-		var job EmailJob
-		var recipients, data string
-		var scheduledAt, sentAt sql.NullTime
-		var errStr sql.NullString
-
-		err := rows.Scan(
-			&job.ID, &job.TemplateSlug, &recipients, &job.Subject, &data,
-			&job.Status, &job.Priority, &job.Attempts, &job.MaxAttempts,
-			&scheduledAt, &sentAt, &errStr, &job.CreatedAt,
-		)
+	jobs := make([]*EmailJob, 0, len(rows))
+	for _, r := range rows {
+		job, err := r.toJob()
 		if err != nil {
 			return nil, err
 		}
-
-		if err := json.Unmarshal([]byte(recipients), &job.Recipients); err != nil {
-			return nil, fmt.Errorf("unmarshal recipients: %w", err)
-		}
-		if err := json.Unmarshal([]byte(data), &job.Data); err != nil {
-			return nil, fmt.Errorf("unmarshal data: %w", err)
-		}
-		if errStr.Valid {
-			job.Error = errStr.String
-		}
-		if scheduledAt.Valid {
-			job.ScheduledAt = &scheduledAt.Time
-		}
-
-		jobs = append(jobs, &job)
+		jobs = append(jobs, job)
 	}
 
 	return jobs, nil
 }
 
-// Stats returns queue statistics.
+// Stats returns email counts grouped by status.
 func (q *Queue) Stats(ctx context.Context) (map[string]int, error) {
-	rows, err := q.db.QueryContext(ctx, `
-		SELECT status, COUNT(*) as count FROM emails GROUP BY status
-	`)
+	type statusCount struct {
+		Status string `db:"status"`
+		Count  int    `db:"count"`
+	}
+
+	var rows []statusCount
+	err := q.conn.QueryRowsCtx(ctx, &rows,
+		"select `status`, count(*) as `count` from `emails` group by `status`")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	stats := make(map[string]int)
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return nil, err
-		}
-		stats[status] = count
+	for _, r := range rows {
+		stats[r.Status] = r.Count
 	}
-
 	return stats, nil
-}
-
-func (q *Queue) storeEmail(ctx context.Context, job EmailJob) error {
-	recipients, err := json.Marshal(job.Recipients)
-	if err != nil {
-		return fmt.Errorf("marshal recipients: %w", err)
-	}
-	data, err := json.Marshal(job.Data)
-	if err != nil {
-		return fmt.Errorf("marshal data: %w", err)
-	}
-
-	var scheduledAt sql.NullTime
-	if job.ScheduledAt != nil {
-		scheduledAt = sql.NullTime{Time: *job.ScheduledAt, Valid: true}
-	}
-
-	_, err = q.db.ExecContext(ctx, `
-		INSERT INTO emails (id, template_slug, recipients, subject, data, status,
-		                    priority, attempts, max_attempts, scheduled_at, created_at)
-		VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?, CURRENT_TIMESTAMP)
-	`, job.ID, job.TemplateSlug, string(recipients), job.Subject, string(data),
-		job.Priority, job.MaxAttempts, scheduledAt)
-
-	return err
 }

@@ -5,6 +5,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	email "github.com/joeblew999/plat-mjml/internal/handler/email"
 	stats "github.com/joeblew999/plat-mjml/internal/handler/stats"
@@ -18,27 +19,32 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				// Queue an email for delivery
 				Method:  http.MethodPost,
 				Path:    "/emails",
 				Handler: email.SendEmailHandler(serverCtx),
 			},
 			{
+				// List emails with optional status filter
 				Method:  http.MethodGet,
 				Path:    "/emails",
 				Handler: email.ListEmailsHandler(serverCtx),
 			},
 			{
+				// Get the delivery status of an email by ID
 				Method:  http.MethodGet,
 				Path:    "/emails/:id",
 				Handler: email.GetEmailStatusHandler(serverCtx),
 			},
 		},
 		rest.WithPrefix("/api/v1"),
+		rest.WithTimeout(10000*time.Millisecond),
 	)
 
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				// Get email delivery statistics
 				Method:  http.MethodGet,
 				Path:    "/stats",
 				Handler: stats.GetStatsHandler(serverCtx),
@@ -50,21 +56,25 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 	server.AddRoutes(
 		[]rest.Route{
 			{
+				// List all available email templates
 				Method:  http.MethodGet,
 				Path:    "/templates",
 				Handler: template.ListTemplatesHandler(serverCtx),
 			},
 			{
+				// Get template details by slug
 				Method:  http.MethodGet,
 				Path:    "/templates/:slug",
 				Handler: template.GetTemplateHandler(serverCtx),
 			},
 			{
+				// Render a template to HTML with test data
 				Method:  http.MethodGet,
 				Path:    "/templates/:slug/render",
 				Handler: template.RenderTemplateHandler(serverCtx),
 			},
 		},
 		rest.WithPrefix("/api/v1"),
+		rest.WithTimeout(30000*time.Millisecond),
 	)
 }

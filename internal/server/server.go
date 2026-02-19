@@ -18,7 +18,9 @@ import (
 	gomjml "github.com/preslavrachev/gomjml/mjml"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/mr"
 	"github.com/zeromicro/go-zero/core/proc"
+	"github.com/zeromicro/go-zero/core/prometheus"
 	"github.com/zeromicro/go-zero/core/service"
 	"github.com/zeromicro/go-zero/mcp"
 	"github.com/zeromicro/go-zero/rest"
@@ -35,33 +37,38 @@ func New(c Config) (*Server, error) {
 	// Register global error handler for proper HTTP status codes
 	errorx.RegisterErrorHandler()
 
+	// Enable go-zero prometheus metrics (required for metric.CounterVec/HistogramVec/GaugeVec to record)
+	prometheus.Enable()
+
 	// Create MCP server
 	mcpServer := mcp.NewMcpServer(c.McpConf)
 
-	// Create MJML renderer
-	renderer := mjml.NewRenderer(
-		mjml.WithTemplateDir(c.Templates.Dir),
-		mjml.WithFontDir(c.Fonts.Dir),
-		mjml.WithCache(true),
+	// Parallel initialization: template loading and database opening are independent
+	var renderer *mjml.Renderer
+	var database *db.DB
+
+	err := mr.Finish(
+		func() error {
+			renderer = mjml.NewRenderer(
+				mjml.WithTemplateDir(c.Templates.Dir),
+				mjml.WithFontDir(c.Fonts.Dir),
+				mjml.WithCache(true),
+			)
+			return renderer.LoadTemplatesFromDir(c.Templates.Dir)
+		},
+		func() error {
+			var e error
+			database, e = db.Open(c.Database.Path)
+			return e
+		},
 	)
-
-	// Load templates
-	if err := renderer.LoadTemplatesFromDir(c.Templates.Dir); err != nil {
-		return nil, fmt.Errorf("failed to load templates: %w", err)
-	}
-
-	// Open database
-	database, err := db.Open(c.Database.Path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to initialize: %w", err)
 	}
 
-	// Create queue
-	emailQueue, err := queue.NewQueue(database.DB, "emails", 2)
-	if err != nil {
-		database.Close()
-		return nil, fmt.Errorf("failed to create queue: %w", err)
-	}
+	// Create queue using go-zero sqlx.SqlConn for circuit breaking + tracing
+	conn := database.SqlConn()
+	emailQueue := queue.NewQueue(conn)
 
 	// Parse delivery config
 	retryBackoff, _ := time.ParseDuration(c.Delivery.RetryBackoff)
@@ -94,8 +101,8 @@ func New(c Config) (*Server, error) {
 	// Register MCP tools
 	RegisterMCPTools(mcpServer, renderer, emailQueue)
 
-	// Create UI rest server (Datastar web UI)
-	uiServer, err := rest.NewServer(c.UI.RestConf)
+	// Create UI rest server (Datastar web UI) with CORS
+	uiServer, err := rest.NewServer(c.UI.RestConf, rest.WithCors("*"))
 	if err != nil {
 		database.Close()
 		return nil, fmt.Errorf("failed to create UI server: %w", err)
@@ -105,8 +112,8 @@ func New(c Config) (*Server, error) {
 	uiServer.AddRoutes(uiHandlers.Routes())
 	uiServer.AddRoutes(uiHandlers.SSERoutes(), rest.WithSSE())
 
-	// Create API rest server (goctl-generated JSON REST API)
-	apiServer, err := rest.NewServer(c.API.RestConf)
+	// Create API rest server (goctl-generated JSON REST API) with CORS
+	apiServer, err := rest.NewServer(c.API.RestConf, rest.WithCors("*"))
 	if err != nil {
 		database.Close()
 		return nil, fmt.Errorf("failed to create API server: %w", err)
@@ -130,6 +137,12 @@ func New(c Config) (*Server, error) {
 	proc.AddShutdownListener(func() {
 		gomjml.StopASTCacheCleanup()
 	})
+	if emailQueue.Events != nil {
+		proc.AddShutdownListener(func() {
+			logx.Info("Flushing email events")
+			emailQueue.Events.Flush()
+		})
+	}
 
 	// Build service group: delivery + UI + API + MCP (stopped in reverse order)
 	group := service.NewServiceGroup()

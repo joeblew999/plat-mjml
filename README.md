@@ -1,5 +1,7 @@
 # plat-mjml
 
+MJML (Mailjet Markup Language).
+
 MJML email template platform with MCP integration for AI assistants.
 
 ## Features
@@ -149,6 +151,8 @@ curl http://localhost:8082/api/v1/stats
 Swagger documentation is available at [docs/swagger.json](docs/swagger.json).
 
 ### goctl Code Generation Workflow
+
+https://go-zero.dev/en/docs/tutorials/cli/overview
 
 ```bash
 # 1. Edit the API contract

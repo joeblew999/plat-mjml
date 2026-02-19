@@ -38,9 +38,10 @@ type RenderTemplateResponse {
 
 // --- Email types ---
 type SendEmailRequest {
-	Template string   `json:"template"`
-	To       []string `json:"to"`
-	Subject  string   `json:"subject"`
+	Template string            `json:"template"`
+	To       []string          `json:"to"`
+	Subject  string            `json:"subject"`
+	Data     map[string]string `json:"data,optional"`
 }
 
 type SendEmailResponse {
@@ -83,31 +84,39 @@ type StatsResponse {
 
 // --- Routes ---
 @server (
-	prefix: /api/v1
-	group:  template
+	prefix:  /api/v1
+	group:   template
+	timeout: 30s
 )
 service mjml-api {
+	@doc "List all available email templates"
 	@handler ListTemplates
 	get /templates returns (ListTemplatesResponse)
 
+	@doc "Get template details by slug"
 	@handler GetTemplate
 	get /templates/:slug (GetTemplateRequest) returns (GetTemplateResponse)
 
+	@doc "Render a template to HTML with test data"
 	@handler RenderTemplate
 	get /templates/:slug/render (RenderTemplateRequest) returns (RenderTemplateResponse)
 }
 
 @server (
-	prefix: /api/v1
-	group:  email
+	prefix:  /api/v1
+	group:   email
+	timeout: 10s
 )
 service mjml-api {
+	@doc "Queue an email for delivery"
 	@handler SendEmail
 	post /emails (SendEmailRequest) returns (SendEmailResponse)
 
+	@doc "Get the delivery status of an email by ID"
 	@handler GetEmailStatus
 	get /emails/:id (GetEmailStatusRequest) returns (GetEmailStatusResponse)
 
+	@doc "List emails with optional status filter"
 	@handler ListEmails
 	get /emails (ListEmailsRequest) returns (ListEmailsResponse)
 }
@@ -117,6 +126,7 @@ service mjml-api {
 	group:  stats
 )
 service mjml-api {
+	@doc "Get email delivery statistics"
 	@handler GetStats
 	get /stats returns (StatsResponse)
 }

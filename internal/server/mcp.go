@@ -92,7 +92,7 @@ func registerListTemplatesTool(s mcp.McpServer, renderer *mjml.Renderer) {
 		for _, t := range templates {
 			templateList = append(templateList, map[string]any{
 				"slug":        t,
-				"description": getTemplateDescription(t),
+				"description": mjml.TemplateDescription(t),
 			})
 		}
 
@@ -208,17 +208,3 @@ func registerGetEmailStatusTool(s mcp.McpServer, q *queue.Queue) {
 	})
 }
 
-func getTemplateDescription(slug string) string {
-	descriptions := map[string]string{
-		"simple":                "Basic email template",
-		"welcome":               "Welcome/activation email for new users",
-		"reset_password":        "Password reset email with security info",
-		"notification":          "System notification email",
-		"premium_newsletter":    "Newsletter with premium fonts",
-		"business_announcement": "Business announcement email",
-	}
-	if desc, ok := descriptions[slug]; ok {
-		return desc
-	}
-	return "Email template"
-}

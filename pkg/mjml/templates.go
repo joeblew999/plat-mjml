@@ -88,6 +88,24 @@ type SocialLink struct {
 	URL      string `json:"url"`
 }
 
+// TemplateDescription returns a human-readable description for a template slug.
+func TemplateDescription(slug string) string {
+	desc, ok := templateDescriptions[slug]
+	if !ok {
+		return "Email template"
+	}
+	return desc
+}
+
+var templateDescriptions = map[string]string{
+	"simple":                "Basic email template",
+	"welcome":               "Welcome/activation email for new users",
+	"reset_password":        "Password reset email with security info",
+	"notification":          "System notification email",
+	"premium_newsletter":    "Newsletter with premium fonts",
+	"business_announcement": "Business announcement email",
+}
+
 // TestData provides canonical test data for all template types
 func TestData() map[string]any {
 	baseData := EmailData{

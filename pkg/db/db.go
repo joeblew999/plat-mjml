@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/zeromicro/go-zero/core/stores/sqlx"
 	_ "modernc.org/sqlite"
 )
 
@@ -62,21 +64,6 @@ func (d *DB) Path() string {
 // Migrate runs database migrations.
 func (d *DB) Migrate() error {
 	schema := `
-	-- goqite message queue (required by goqite v0.4.0+)
-	CREATE TABLE IF NOT EXISTS goqite (
-		id TEXT PRIMARY KEY DEFAULT ('m_' || lower(hex(randomblob(16)))),
-		created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
-		updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
-		queue TEXT NOT NULL,
-		body BLOB NOT NULL,
-		timeout TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ')),
-		received INTEGER NOT NULL DEFAULT 0,
-		priority INTEGER NOT NULL DEFAULT 0
-	) STRICT;
-
-	CREATE INDEX IF NOT EXISTS goqite_queue_priority_created_idx
-		ON goqite (queue, priority DESC, created);
-
 	-- Templates with versioning
 	CREATE TABLE IF NOT EXISTS templates (
 		id TEXT PRIMARY KEY,
@@ -163,17 +150,15 @@ func (d *DB) Migrate() error {
 	return err
 }
 
-// Tx executes a function within a transaction.
-func (d *DB) Tx(fn func(*sql.Tx) error) error {
-	tx, err := d.Begin()
-	if err != nil {
-		return err
-	}
-
-	if err := fn(tx); err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	return tx.Commit()
+// SqlConn returns a go-zero sqlx.SqlConn wrapping the underlying database.
+// This provides automatic circuit breaking and OpenTelemetry tracing on every query.
+func (d *DB) SqlConn() sqlx.SqlConn {
+	return sqlx.NewSqlConnFromDB(d.DB, sqlx.WithAcceptable(sqliteAcceptable))
 }
+
+// sqliteAcceptable tells the circuit breaker that "database is locked" errors
+// are transient (SQLite WAL contention) and should not trip the breaker.
+func sqliteAcceptable(err error) bool {
+	return err == nil || strings.Contains(err.Error(), "database is locked")
+}
+

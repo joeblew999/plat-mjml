@@ -185,7 +185,7 @@ func (h *Handlers) getTemplateInfos() []TemplateInfo {
 	for _, slug := range slugs {
 		infos = append(infos, TemplateInfo{
 			Slug:        slug,
-			Description: getTemplateDescription(slug),
+			Description: mjml.TemplateDescription(slug),
 		})
 	}
 	return infos
@@ -253,17 +253,3 @@ func renderQueueItems(jobs []*queue.EmailJob) string {
 	return b.String()
 }
 
-func getTemplateDescription(slug string) string {
-	descriptions := map[string]string{
-		"simple":                "Basic email template",
-		"welcome":               "Welcome/activation email for new users",
-		"reset_password":        "Password reset email with security info",
-		"notification":          "System notification email",
-		"premium_newsletter":    "Newsletter with premium fonts",
-		"business_announcement": "Business announcement email",
-	}
-	if desc, ok := descriptions[slug]; ok {
-		return desc
-	}
-	return "Email template"
-}

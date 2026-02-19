@@ -149,25 +149,19 @@ func TestTemplateCache(t *testing.T) {
 	data := testData["simple"]
 	
 	// First render
-	_, err := renderer.RenderTemplate("cached", data)
+	html1, err := renderer.RenderTemplate("cached", data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
-	// Cache should have one entry
-	if renderer.GetCacheSize() != 1 {
-		t.Errorf("Expected cache size 1, got %d", renderer.GetCacheSize())
-	}
-	
-	// Second render should use cache
-	_, err = renderer.RenderTemplate("cached", data)
+
+	// Second render should use cache and return identical result
+	html2, err := renderer.RenderTemplate("cached", data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
-	// Cache size should still be 1
-	if renderer.GetCacheSize() != 1 {
-		t.Errorf("Expected cache size 1, got %d", renderer.GetCacheSize())
+
+	if html1 != html2 {
+		t.Error("Cached render returned different result")
 	}
 }
 

@@ -23,7 +23,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "ListEmails",
+        "summary": "List emails with optional status filter",
         "operationId": "emailListEmails",
         "parameters": [
           {
@@ -109,7 +109,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "SendEmail",
+        "summary": "Queue an email for delivery",
         "operationId": "emailSendEmail",
         "parameters": [
           {
@@ -124,6 +124,12 @@
                 "subject"
               ],
               "properties": {
+                "data": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
                 "subject": {
                   "type": "string"
                 },
@@ -172,7 +178,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "GetEmailStatus",
+        "summary": "Get the delivery status of an email by ID",
         "operationId": "emailGetEmailStatus",
         "parameters": [
           {
@@ -229,7 +235,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "GetStats",
+        "summary": "Get email delivery statistics",
         "operationId": "statsGetStats",
         "responses": {
           "200": {
@@ -260,7 +266,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "ListTemplates",
+        "summary": "List all available email templates",
         "operationId": "templateListTemplates",
         "responses": {
           "200": {
@@ -303,7 +309,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "GetTemplate",
+        "summary": "Get template details by slug",
         "operationId": "templateGetTemplate",
         "parameters": [
           {
@@ -339,7 +345,7 @@
         "schemes": [
           "https"
         ],
-        "summary": "RenderTemplate",
+        "summary": "Render a template to HTML with test data",
         "operationId": "templateRenderTemplate",
         "parameters": [
           {
@@ -371,7 +377,7 @@
       }
     }
   },
-  "x-date": "2026-02-19 09:45:17",
+  "x-date": "2026-02-19 11:29:41",
   "x-description": "This is a goctl generated swagger file.",
   "x-github": "https://github.com/zeromicro/go-zero",
   "x-go-zero-doc": "https://go-zero.dev/",

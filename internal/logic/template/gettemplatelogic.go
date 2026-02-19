@@ -9,6 +9,7 @@ import (
 	"github.com/joeblew999/plat-mjml/internal/errorx"
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/types"
+	"github.com/joeblew999/plat-mjml/pkg/mjml"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -33,7 +34,7 @@ func (l *GetTemplateLogic) GetTemplate(req *types.GetTemplateRequest) (resp *typ
 		if slug == req.Slug {
 			return &types.GetTemplateResponse{
 				Slug:        slug,
-				Description: templateDescription(slug),
+				Description: mjml.TemplateDescription(slug),
 			}, nil
 		}
 	}

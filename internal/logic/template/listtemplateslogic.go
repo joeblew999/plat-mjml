@@ -8,6 +8,7 @@ import (
 
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/types"
+	"github.com/joeblew999/plat-mjml/pkg/mjml"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -33,7 +34,7 @@ func (l *ListTemplatesLogic) ListTemplates() (resp *types.ListTemplatesResponse,
 	for _, slug := range slugs {
 		items = append(items, types.TemplateItem{
 			Slug:        slug,
-			Description: templateDescription(slug),
+			Description: mjml.TemplateDescription(slug),
 		})
 	}
 

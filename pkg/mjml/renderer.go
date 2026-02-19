@@ -16,18 +16,22 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joeblew999/plat-mjml/pkg/font"
 	"github.com/preslavrachev/gomjml/mjml"
+	"github.com/zeromicro/go-zero/core/collection"
+	"github.com/zeromicro/go-zero/core/syncx"
 )
 
 // Renderer handles MJML template loading, caching, and rendering
 type Renderer struct {
-	templates   map[string]*template.Template
-	cache       map[string]string // Cache for rendered HTML
-	mu          sync.RWMutex
-	options     *RenderOptions
-	fontManager *font.Manager
+	templates    map[string]*template.Template
+	cache        *collection.Cache  // LRU + TTL cache, thread-safe, no manual mutex needed
+	singleFlight syncx.SingleFlight // deduplicates concurrent identical renders
+	mu           sync.RWMutex       // protects templates map only
+	options      *RenderOptions
+	fontManager  *font.Manager
 }
 
 // RenderOptions configures the MJML renderer behavior
@@ -94,15 +98,17 @@ func NewRenderer(opts ...RendererOption) *Renderer {
 		TemplateDir:      "./templates",
 		EnableFonts:      true,
 	}
-	
+
 	for _, opt := range opts {
 		opt(options)
 	}
 
+	cache, _ := collection.NewCache(time.Hour, collection.WithLimit(1000))
 	renderer := &Renderer{
-		templates: make(map[string]*template.Template),
-		cache:     make(map[string]string),
-		options:   options,
+		templates:    make(map[string]*template.Template),
+		cache:        cache,
+		singleFlight: syncx.NewSingleFlight(),
+		options:      options,
 	}
 
 	// Initialize font manager if fonts are enabled
@@ -128,12 +134,7 @@ func (r *Renderer) LoadTemplate(name, content string) error {
 	}
 
 	r.templates[name] = tmpl
-	
-	// Clear cache for this template
-	if r.options.EnableCache {
-		delete(r.cache, name)
-	}
-	
+
 	return nil
 }
 
@@ -143,7 +144,7 @@ func (r *Renderer) LoadTemplateFromFile(name, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read template file %s: %w", filePath, err)
 	}
-	
+
 	return r.LoadTemplate(name, string(content))
 }
 
@@ -153,11 +154,11 @@ func (r *Renderer) LoadTemplatesFromDir(dir string) error {
 		if err != nil {
 			return err
 		}
-		
+
 		if d.IsDir() || !strings.HasSuffix(path, ".mjml") {
 			return nil
 		}
-		
+
 		// Use filename without extension as template name
 		name := strings.TrimSuffix(filepath.Base(path), ".mjml")
 		return r.LoadTemplateFromFile(name, path)
@@ -198,18 +199,19 @@ func (r *Renderer) ReplaceTemplatesFromDir(dir string) error {
 
 	r.mu.Lock()
 	r.templates = newTemplates
-	r.cache = make(map[string]string)
 	r.mu.Unlock()
 
 	return nil
 }
 
-// RenderTemplate renders a template with the given data to HTML
+// RenderTemplate renders a template with the given data to HTML.
+// Uses SingleFlight to deduplicate concurrent identical renders and
+// collection.Cache for LRU+TTL caching.
 func (r *Renderer) RenderTemplate(name string, data any) (string, error) {
 	r.mu.RLock()
-	tmpl, exists := r.templates[name]
+	_, exists := r.templates[name]
 	r.mu.RUnlock()
-	
+
 	if !exists {
 		return "", fmt.Errorf("template %s not found", name)
 	}
@@ -219,36 +221,50 @@ func (r *Renderer) RenderTemplate(name string, data any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create cache key for template %s: %w", name, err)
 	}
-	
+
 	// Check cache if enabled
 	if r.options.EnableCache {
-		r.mu.RLock()
-		if cached, found := r.cache[cacheKey]; found {
-			r.mu.RUnlock()
-			return cached, nil
+		if cached, found := r.cache.Get(cacheKey); found {
+			renderCacheHits.Inc(name)
+			return cached.(string), nil
 		}
-		r.mu.RUnlock()
 	}
 
-	// Execute template to get MJML
+	// SingleFlight: if multiple goroutines request the same render, only one does the work
+	val, _, err := r.singleFlight.DoEx(cacheKey, func() (any, error) {
+		renderCacheMisses.Inc(name)
+		start := time.Now()
+
+		html, err := r.doRender(name, data)
+
+		renderDuration.ObserveFloat(time.Since(start).Seconds(), name)
+
+		if err == nil && r.options.EnableCache {
+			r.cache.Set(cacheKey, html)
+		}
+		return html, err
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return val.(string), nil
+}
+
+// doRender executes the template and converts MJML to HTML.
+func (r *Renderer) doRender(name string, data any) (string, error) {
+	r.mu.RLock()
+	tmpl := r.templates[name]
+	r.mu.RUnlock()
+
 	var mjmlBuf bytes.Buffer
 	if err := tmpl.Execute(&mjmlBuf, data); err != nil {
 		return "", fmt.Errorf("failed to execute template %s: %w", name, err)
 	}
 
-	mjmlContent := mjmlBuf.String()
-
-	// Convert MJML to HTML
-	html, err := r.renderMJML(mjmlContent)
+	html, err := r.renderMJML(mjmlBuf.String())
 	if err != nil {
 		return "", fmt.Errorf("failed to render MJML for template %s: %w", name, err)
-	}
-
-	// Cache result if enabled
-	if r.options.EnableCache {
-		r.mu.Lock()
-		r.cache[cacheKey] = html
-		r.mu.Unlock()
 	}
 
 	return html, nil
@@ -262,11 +278,11 @@ func (r *Renderer) RenderString(mjmlContent string) (string, error) {
 // renderMJML converts MJML content to HTML using gomjml
 func (r *Renderer) renderMJML(mjmlContent string) (string, error) {
 	var mjmlOpts []mjml.RenderOption
-	
+
 	if r.options.EnableDebug {
 		mjmlOpts = append(mjmlOpts, mjml.WithDebugTags(true))
 	}
-	
+
 	if r.options.EnableCache {
 		mjmlOpts = append(mjmlOpts, mjml.WithCache())
 	}
@@ -283,7 +299,7 @@ func (r *Renderer) renderMJML(mjmlContent string) (string, error) {
 func (r *Renderer) ListTemplates() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	names := make([]string, 0, len(r.templates))
 	for name := range r.templates {
 		names = append(names, name)
@@ -295,7 +311,7 @@ func (r *Renderer) ListTemplates() []string {
 func (r *Renderer) HasTemplate(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	_, exists := r.templates[name]
 	return exists
 }
@@ -304,41 +320,24 @@ func (r *Renderer) HasTemplate(name string) bool {
 func (r *Renderer) RemoveTemplate(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	delete(r.templates, name)
-	
-	// Clear cache entries for this template
-	if r.options.EnableCache {
-		for key := range r.cache {
-			if strings.HasPrefix(key, name+"_") {
-				delete(r.cache, key)
-			}
-		}
-	}
 }
 
 // ClearCache clears all cached rendered HTML
 func (r *Renderer) ClearCache() {
-	if !r.options.EnableCache {
-		return
-	}
-	
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	
-	r.cache = make(map[string]string)
+	// collection.Cache doesn't expose a clear method, but we can replace it
+	r.cache, _ = collection.NewCache(time.Hour, collection.WithLimit(1000))
 }
 
-// GetCacheSize returns the number of cached HTML entries
+// GetCacheSize returns the number of cached HTML entries.
+// Note: collection.Cache doesn't expose size, so this returns -1 when cache is enabled
+// to indicate the cache is active. Use for testing purposes only.
 func (r *Renderer) GetCacheSize() int {
 	if !r.options.EnableCache {
 		return 0
 	}
-	
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	
-	return len(r.cache)
+	return -1
 }
 
 // createCacheKey creates a deterministic cache key based on template name and data content
@@ -348,13 +347,13 @@ func (r *Renderer) createCacheKey(name string, data any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize data for caching: %w", err)
 	}
-	
+
 	// Create hash of template name + data content
 	hasher := sha256.New()
 	hasher.Write([]byte(name))
 	hasher.Write(dataBytes)
 	hash := fmt.Sprintf("%x", hasher.Sum(nil))
-	
+
 	return fmt.Sprintf("%s_%s", name, hash[:16]), nil // Use first 16 chars of hash
 }
 
@@ -363,7 +362,7 @@ func (r *Renderer) LoadFont(family string, weight int) error {
 	if !r.options.EnableFonts || r.fontManager == nil {
 		return fmt.Errorf("font management is disabled")
 	}
-	
+
 	return r.fontManager.Cache(family, weight)
 }
 
@@ -433,7 +432,7 @@ func (r *Renderer) ListCachedFonts() []font.FontInfo {
 	if !r.options.EnableFonts || r.fontManager == nil {
 		return nil
 	}
-	
+
 	return r.fontManager.List()
 }
 
@@ -442,6 +441,6 @@ func (r *Renderer) IsFontCached(family string, weight int) bool {
 	if !r.options.EnableFonts || r.fontManager == nil {
 		return false
 	}
-	
+
 	return r.fontManager.Available(family, weight)
 }

@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/joeblew999/plat-mjml/pkg/mail"
 	"github.com/joeblew999/plat-mjml/pkg/mjml"
 	"github.com/joeblew999/plat-mjml/pkg/queue"
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/rescue"
+	"github.com/zeromicro/go-zero/core/syncx"
+	"github.com/zeromicro/go-zero/core/threading"
 	"golang.org/x/time/rate"
-	"maragu.dev/goqite"
 )
 
 // Config holds delivery engine configuration.
@@ -42,10 +43,11 @@ type Engine struct {
 	renderer    *mjml.Renderer
 	smtpConfig  mail.Config
 	rateLimiter *rate.Limiter
+	running     *syncx.AtomicBool
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	group  *threading.RoutineGroup
 }
 
 // NewEngine creates a new delivery engine.
@@ -61,73 +63,101 @@ func NewEngine(q *queue.Queue, r *mjml.Renderer, smtp mail.Config, cfg Config) *
 		renderer:    r,
 		smtpConfig:  smtp,
 		rateLimiter: limiter,
+		running:     syncx.NewAtomicBool(),
 		ctx:         ctx,
 		cancel:      cancel,
+		group:       threading.NewRoutineGroup(),
 	}
 }
 
 // Start starts the delivery engine with the specified number of workers.
 func (e *Engine) Start(workers int) {
+	if !e.running.CompareAndSwap(false, true) {
+		return // Already running
+	}
+
 	logx.Infow("Delivery engine started", logx.Field("workers", workers))
 	for i := 0; i < workers; i++ {
-		e.wg.Add(1)
-		go e.worker(i)
+		workerID := i
+		e.group.RunSafe(func() { e.worker(workerID) })
 	}
 }
 
 // Stop gracefully stops the delivery engine.
 func (e *Engine) Stop() {
+	if !e.running.CompareAndSwap(true, false) {
+		return // Already stopped
+	}
+
 	logx.Info("Delivery engine stopping, waiting for workers")
 	e.cancel()
-	e.wg.Wait()
+	e.group.Wait()
 	logx.Info("Delivery engine stopped")
 }
 
 func (e *Engine) worker(id int) {
-	defer e.wg.Done()
+	backoff := 100 * time.Millisecond
+	const maxBackoff = 5 * time.Second
 
 	for {
 		select {
 		case <-e.ctx.Done():
 			return
 		default:
-			job, msg, err := e.queue.Receive(e.ctx)
+			job, err := e.queue.Receive(e.ctx)
 			if err != nil {
-				time.Sleep(time.Second)
+				time.Sleep(backoff)
+				if backoff < maxBackoff {
+					backoff = min(backoff*2, maxBackoff)
+				}
 				continue
 			}
 			if job == nil {
-				time.Sleep(time.Second)
+				// No work available — adaptive backoff
+				time.Sleep(backoff)
+				if backoff < maxBackoff {
+					backoff = min(backoff*2, maxBackoff)
+				}
+
+				// Periodically update queue depth gauge
+				e.updateQueueDepth()
 				continue
 			}
 
-			e.processJob(job, msg)
+			backoff = 100 * time.Millisecond // Reset on work found
+			e.processJob(job)
 		}
 	}
 }
 
-func (e *Engine) processJob(job *queue.EmailJob, msg *goqite.Message) {
-	ctx := e.ctx
-
-	logx.Infow("Processing email",
-		logx.Field("id", job.ID),
+func (e *Engine) processJob(job *queue.EmailJob) {
+	// Enrich context with per-job fields — all logx calls with ctx include these automatically
+	ctx := logx.ContextWithFields(e.ctx,
+		logx.Field("job_id", job.ID),
 		logx.Field("template", job.TemplateSlug),
-		logx.Field("recipients", job.Recipients),
+		logx.Field("recipients", len(job.Recipients)),
 	)
 
-	// Update status to processing
-	e.queue.UpdateStatus(ctx, job.ID, "processing", nil)
+	// Panic recovery: mark job failed and record metric if processJob panics
+	defer rescue.RecoverCtx(ctx, func() {
+		emailsFailed.Inc(job.TemplateSlug, "panic")
+		e.queue.MarkFailed(ctx, job.ID, fmt.Errorf("panic during delivery"))
+	})
+
+	logx.WithContext(ctx).Info("Processing email")
+
+	start := time.Now()
 
 	// Apply rate limiting
 	if err := e.rateLimiter.Wait(ctx); err != nil {
-		e.handleError(ctx, job, msg, err)
+		e.handleError(ctx, job, err)
 		return
 	}
 
 	// Render template
 	html, err := e.renderer.RenderTemplate(job.TemplateSlug, job.Data)
 	if err != nil {
-		e.handleError(ctx, job, msg, fmt.Errorf("render template: %w", err))
+		e.handleError(ctx, job, fmt.Errorf("render template: %w", err))
 		return
 	}
 
@@ -140,50 +170,45 @@ func (e *Engine) processJob(job *queue.EmailJob, msg *goqite.Message) {
 	}
 
 	if len(sendErrors) > 0 {
-		e.handleError(ctx, job, msg, fmt.Errorf("%s", strings.Join(sendErrors, "; ")))
+		e.handleError(ctx, job, fmt.Errorf("%s", strings.Join(sendErrors, "; ")))
 		return
 	}
 
-	// Success - mark as sent and delete from queue
+	// Success
 	e.queue.MarkSent(ctx, job.ID, "")
-	e.queue.Delete(ctx, msg)
+	emailsSent.Inc(job.TemplateSlug)
+	deliveryDuration.ObserveFloat(time.Since(start).Seconds(), job.TemplateSlug)
+	e.recordEvent(job.ID, "sent", "")
 
-	logx.Infow("Email sent",
-		logx.Field("id", job.ID),
-		logx.Field("template", job.TemplateSlug),
-		logx.Field("recipients", job.Recipients),
-	)
+	logx.WithContext(ctx).Info("Email sent")
 }
 
-func (e *Engine) handleError(ctx context.Context, job *queue.EmailJob, msg *goqite.Message, err error) {
+func (e *Engine) handleError(ctx context.Context, job *queue.EmailJob, err error) {
 	job.Attempts++
 	job.Error = err.Error()
 
+	// Classify failure reason for metrics
+	reason := "transient"
+	if isPermanentFailure(err) {
+		reason = "permanent"
+	}
+
 	// Check if permanent failure
 	if isPermanentFailure(err) || job.Attempts >= job.MaxAttempts {
-		e.queue.UpdateStatus(ctx, job.ID, "failed", err)
-		e.queue.Delete(ctx, msg)
-		logx.Errorw("Email delivery failed permanently",
-			logx.Field("id", job.ID),
-			logx.Field("attempts", job.Attempts),
-			logx.Field("error", err.Error()),
-		)
+		e.queue.MarkFailed(ctx, job.ID, err)
+		emailsFailed.Inc(job.TemplateSlug, reason)
+		e.recordEvent(job.ID, "failed", err.Error())
+		logx.WithContext(ctx).Errorf("Email delivery failed permanently: %v", err)
 		return
 	}
 
 	// Schedule retry with backoff
 	backoff := e.calculateBackoff(job.Attempts)
-	e.queue.UpdateStatus(ctx, job.ID, "retry", err)
+	e.queue.MarkRetry(ctx, job.ID, backoff, err)
+	emailsRetried.Inc(job.TemplateSlug)
+	e.recordEvent(job.ID, "retry", fmt.Sprintf("attempt %d, backoff %s: %v", job.Attempts, backoff, err))
 
-	// Extend the message timeout to retry later
-	e.queue.Extend(ctx, msg, backoff)
-
-	logx.Infow("Email delivery retrying",
-		logx.Field("id", job.ID),
-		logx.Field("attempt", job.Attempts),
-		logx.Field("backoff", backoff.String()),
-		logx.Field("error", err.Error()),
-	)
+	logx.WithContext(ctx).Infof("Email delivery retrying in %s: %v", backoff, err)
 }
 
 func (e *Engine) calculateBackoff(attempts int) time.Duration {
@@ -205,6 +230,24 @@ func isPermanentFailure(err error) bool {
 		}
 	}
 	return false
+}
+
+// recordEvent writes an event to the queue's BulkInserter if available.
+func (e *Engine) recordEvent(emailID, eventType, details string) {
+	if e.queue.Events != nil {
+		e.queue.Events.RecordEvent(emailID, eventType, details)
+	}
+}
+
+// updateQueueDepth refreshes the queue depth gauge from current stats.
+func (e *Engine) updateQueueDepth() {
+	stats, err := e.queue.Stats(e.ctx)
+	if err != nil {
+		return
+	}
+	for status, count := range stats {
+		queueDepth.Set(float64(count), status)
+	}
 }
 
 // SendNow sends an email immediately without queueing.
