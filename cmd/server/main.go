@@ -10,7 +10,7 @@ import (
 	"github.com/joeblew999/plat-mjml/internal/handler"
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/ui"
-	"github.com/joeblew999/plat-mjml/pkg/delivery"
+	"github.com/joeblew999/plat-mjml/internal/delivery"
 	gomjml "github.com/preslavrachev/gomjml/mjml"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/zeromicro/go-zero/core/conf"
@@ -35,13 +35,13 @@ func main() {
 
 	ctx := svc.NewServiceContext(c)
 
-	// MCP server
+	// MCP server — uses EmailsModel directly
 	mcpServer := mcp.NewMcpServer(c.McpConf)
-	registerMCPTools(mcpServer, ctx.Renderer, ctx.Queue)
+	registerMCPTools(mcpServer, ctx.Renderer, ctx.EmailsModel)
 
-	// UI server (Datastar web UI)
+	// UI server (Datastar web UI) — uses EmailsModel directly
 	uiServer := rest.MustNewServer(c.UI.RestConf, rest.WithCors("*"))
-	uiHandlers := ui.NewHandlers(ctx.Renderer, ctx.Queue)
+	uiHandlers := ui.NewHandlers(ctx.Renderer, ctx.EmailsModel)
 	uiServer.AddRoutes(uiHandlers.Routes())
 	uiServer.AddRoutes(uiHandlers.SSERoutes(), rest.WithSSE())
 

@@ -15,7 +15,7 @@ When working with this project, follow go-zero conventions:
 - Config via `conf.MustLoad` with YAML files
 - Pass `ctx` through all layers
 - Use `errorx` for API errors, not `fmt.Errorf`
-- ServiceContext for dependency injection
+- ServiceContext for dependency injection — holds Config + all models + domain services
 
 ## Key Commands
 
@@ -37,24 +37,37 @@ cmd/
   server/mcp.go            # MCP tool registration
   cli/main.go              # CLI tool entry point
 internal/
-  config/config.go         # Config struct (go-zero standard location)
+  config/config.go         # Config struct (go-zero standard)
   handler/                 # HTTP handlers (goctl generated — DO NOT EDIT)
   logic/                   # Business logic (goctl generated — safe to edit)
-  model/                   # DB models (goctl generated from schema/)
-  svc/servicecontext.go    # Dependency injection (holds Config + deps)
+  model/                   # DB models (goctl generated from schema/ + custom methods)
+  svc/servicecontext.go    # DI hub (Config + all models + domain services)
   types/types.go           # Request/response types (goctl generated)
   ui/                      # Datastar web UI handlers
   errorx/                  # Error handling
+  db/                      # SQLite database wrapper
+  delivery/                # Email delivery engine (background workers)
+  events/                  # Event recorder (BulkInserter for email_events)
+  mjml/                    # MJML template renderer + cache
 pkg/
-  mjml/                    # MJML template renderer
-  delivery/                # Email delivery engine
-  queue/                   # Job queue (SQLite-backed)
-  mail/                    # SMTP sender
-  font/                    # Google Fonts manager
-  db/                      # Database wrapper
+  mail/                    # SMTP sender (reusable)
+  font/                    # Google Fonts manager (reusable)
 schema/                    # SQL table definitions
 templates/                 # MJML email templates
 ```
+
+## Data Flow (go-zero three-layer)
+
+```
+HTTP Request → Handler (thin) → Logic (business rules) → Model (via svcCtx)
+                                                           ↓
+                                                     EmailsModel
+                                                     TemplatesModel
+                                                     EmailEventsModel
+                                                     SmtpProvidersModel
+```
+
+Logic files access models via `l.svcCtx.EmailsModel.Method()` — never raw SQL.
 
 ## Conventions
 

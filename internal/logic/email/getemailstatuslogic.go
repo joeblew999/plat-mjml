@@ -5,8 +5,10 @@ package email
 
 import (
 	"context"
+	"errors"
 
 	"github.com/joeblew999/plat-mjml/internal/errorx"
+	"github.com/joeblew999/plat-mjml/internal/model"
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/types"
 
@@ -28,22 +30,22 @@ func NewGetEmailStatusLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Ge
 }
 
 func (l *GetEmailStatusLogic) GetEmailStatus(req *types.GetEmailStatusRequest) (resp *types.GetEmailStatusResponse, err error) {
-	job, err := l.svcCtx.Queue.GetStatus(l.ctx, req.Id)
+	email, err := l.svcCtx.EmailsModel.FindOne(l.ctx, req.Id)
 	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return nil, errorx.ErrNotFound("email not found: " + req.Id)
+		}
 		return nil, errorx.ErrInternal("failed to get email status: " + err.Error())
-	}
-	if job == nil {
-		return nil, errorx.ErrNotFound("email not found: " + req.Id)
 	}
 
 	return &types.GetEmailStatusResponse{
-		Id:         job.ID,
-		Template:   job.TemplateSlug,
-		Recipients: job.Recipients,
-		Subject:    job.Subject,
-		Status:     job.Status,
-		Attempts:   job.Attempts,
-		Error:      job.Error,
-		CreatedAt:  job.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		Id:         email.Id,
+		Template:   email.TemplateSlug,
+		Recipients: model.ParseRecipients(email.Recipients),
+		Subject:    email.Subject,
+		Status:     email.Status,
+		Attempts:   int(email.Attempts),
+		Error:      model.NullStringValue(email.Error),
+		CreatedAt:  email.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}, nil
 }

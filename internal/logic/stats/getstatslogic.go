@@ -28,7 +28,7 @@ func NewGetStatsLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetStats
 }
 
 func (l *GetStatsLogic) GetStats() (resp *types.StatsResponse, err error) {
-	stats, err := l.svcCtx.Queue.Stats(l.ctx)
+	stats, err := l.svcCtx.EmailsModel.Stats(l.ctx)
 	if err != nil {
 		return nil, errorx.ErrInternal("failed to get stats: " + err.Error())
 	}

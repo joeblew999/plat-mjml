@@ -8,7 +8,7 @@ import (
 
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/types"
-	"github.com/joeblew999/plat-mjml/pkg/mjml"
+	"github.com/joeblew999/plat-mjml/internal/mjml"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )

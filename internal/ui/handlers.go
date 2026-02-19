@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/joeblew999/plat-mjml/pkg/mjml"
-	"github.com/joeblew999/plat-mjml/pkg/queue"
+	"github.com/joeblew999/plat-mjml/internal/model"
+	"github.com/joeblew999/plat-mjml/internal/mjml"
 	"github.com/starfederation/datastar-go/datastar"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest"
@@ -17,15 +17,15 @@ import (
 
 // Handlers provides HTTP handlers for the UI.
 type Handlers struct {
-	renderer *mjml.Renderer
-	queue    *queue.Queue
+	renderer    *mjml.Renderer
+	emailsModel model.EmailsModel
 }
 
 // NewHandlers creates new UI handlers.
-func NewHandlers(renderer *mjml.Renderer, q *queue.Queue) *Handlers {
+func NewHandlers(renderer *mjml.Renderer, emailsModel model.EmailsModel) *Handlers {
 	return &Handlers{
-		renderer: renderer,
-		queue:    q,
+		renderer:    renderer,
+		emailsModel: emailsModel,
 	}
 }
 
@@ -80,7 +80,7 @@ func (h *Handlers) handleSendPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.queue.Stats(r.Context())
+	stats, err := h.emailsModel.Stats(r.Context())
 	if err != nil {
 		h.sendDatastarError(w, r, err)
 		return
@@ -95,7 +95,7 @@ func (h *Handlers) handleStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 
-	jobs, err := h.queue.List(r.Context(), status, 50)
+	emails, err := h.emailsModel.ListByStatus(r.Context(), status, 50)
 	if err != nil {
 		h.sendDatastarError(w, r, err)
 		return
@@ -104,7 +104,7 @@ func (h *Handlers) handleQueueAPI(w http.ResponseWriter, r *http.Request) {
 	// Render queue items as HTML fragment and patch into #queue-items
 	sse := datastar.NewSSE(w, r)
 
-	fragment := renderQueueItems(jobs)
+	fragment := renderQueueItems(emails)
 	if err := sse.PatchElementf(`<div id="queue-items">%s</div>`, fragment); err != nil {
 		logx.Errorf("datastar patch queue items: %v", err)
 	}
@@ -128,14 +128,14 @@ func (h *Handlers) handlePreview(w http.ResponseWriter, r *http.Request) {
 		data = testData["simple"]
 	}
 
-	html, err := h.renderer.RenderTemplate(slug, data)
+	htmlContent, err := h.renderer.RenderTemplate(slug, data)
 	if err != nil {
 		h.sendDatastarError(w, r, err)
 		return
 	}
 
 	h.sendDatastarSignals(w, r, map[string]any{
-		"previewHtml": html,
+		"previewHtml": htmlContent,
 		"loading":     false,
 	})
 }
@@ -156,15 +156,7 @@ func (h *Handlers) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := queue.EmailJob{
-		TemplateSlug: req.Template,
-		Recipients:   req.To,
-		Subject:      req.Subject,
-		Data:         req.Data,
-		Priority:     queue.PriorityNormal,
-	}
-
-	id, err := h.queue.Enqueue(r.Context(), job)
+	id, err := h.emailsModel.Enqueue(r.Context(), req.Template, req.To, req.Subject, req.Data, model.PriorityNormal)
 	if err != nil {
 		h.sendDatastarSignals(w, r, map[string]any{
 			"sending": false,
@@ -209,8 +201,8 @@ func (h *Handlers) sendDatastarError(w http.ResponseWriter, r *http.Request, err
 	})
 }
 
-func renderQueueItems(jobs []*queue.EmailJob) string {
-	if len(jobs) == 0 {
+func renderQueueItems(emails []*model.Emails) string {
+	if len(emails) == 0 {
 		return `<p class="hint" style="padding:2rem;text-align:center;">No emails in queue</p>`
 	}
 
@@ -224,9 +216,9 @@ func renderQueueItems(jobs []*queue.EmailJob) string {
 	b.WriteString(`<th style="text-align:left;padding:0.75rem 1rem;border-bottom:2px solid var(--border);color:var(--text-muted);font-size:0.875rem;">Created</th>`)
 	b.WriteString(`</tr></thead><tbody>`)
 
-	for _, job := range jobs {
+	for _, email := range emails {
 		statusColor := "var(--text-muted)"
-		switch job.Status {
+		switch email.Status {
 		case "sent":
 			statusColor = "var(--success)"
 		case "failed":
@@ -237,14 +229,14 @@ func renderQueueItems(jobs []*queue.EmailJob) string {
 			statusColor = "var(--primary)"
 		}
 
-		recipients := html.EscapeString(strings.Join(job.Recipients, ", "))
-		created := job.CreatedAt.Format("Jan 2 15:04")
+		recipients := html.EscapeString(strings.Join(model.ParseRecipients(email.Recipients), ", "))
+		created := email.CreatedAt.Format("Jan 2 15:04")
 
 		b.WriteString(`<tr style="border-bottom:1px solid var(--border);">`)
-		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-weight:500;">%s</td>`, html.EscapeString(job.TemplateSlug)))
+		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-weight:500;">%s</td>`, html.EscapeString(email.TemplateSlug)))
 		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-size:0.875rem;">%s</td>`, recipients))
-		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-size:0.875rem;">%s</td>`, html.EscapeString(job.Subject)))
-		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;"><span style="color:%s;font-weight:600;font-size:0.875rem;">%s</span></td>`, statusColor, html.EscapeString(job.Status)))
+		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-size:0.875rem;">%s</td>`, html.EscapeString(email.Subject)))
+		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;"><span style="color:%s;font-weight:600;font-size:0.875rem;">%s</span></td>`, statusColor, html.EscapeString(email.Status)))
 		b.WriteString(fmt.Sprintf(`<td style="padding:0.75rem 1rem;font-size:0.875rem;color:var(--text-muted);">%s</td>`, created))
 		b.WriteString(`</tr>`)
 	}
@@ -252,4 +244,3 @@ func renderQueueItems(jobs []*queue.EmailJob) string {
 	b.WriteString(`</tbody></table>`)
 	return b.String()
 }
-

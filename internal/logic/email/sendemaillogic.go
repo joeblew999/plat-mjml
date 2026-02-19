@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/joeblew999/plat-mjml/internal/errorx"
+	"github.com/joeblew999/plat-mjml/internal/model"
 	"github.com/joeblew999/plat-mjml/internal/svc"
 	"github.com/joeblew999/plat-mjml/internal/types"
-	"github.com/joeblew999/plat-mjml/pkg/queue"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -38,15 +38,7 @@ func (l *SendEmailLogic) SendEmail(req *types.SendEmailRequest) (resp *types.Sen
 		}
 	}
 
-	job := queue.EmailJob{
-		TemplateSlug: req.Template,
-		Recipients:   req.To,
-		Subject:      req.Subject,
-		Data:         data,
-		Priority:     queue.PriorityNormal,
-	}
-
-	id, err := l.svcCtx.Queue.Enqueue(l.ctx, job)
+	id, err := l.svcCtx.EmailsModel.Enqueue(l.ctx, req.Template, req.To, req.Subject, data, model.PriorityNormal)
 	if err != nil {
 		return nil, errorx.ErrInternal("failed to enqueue email: " + err.Error())
 	}

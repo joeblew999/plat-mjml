@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/joeblew999/plat-mjml/pkg/mail"
-	"github.com/joeblew999/plat-mjml/pkg/mjml"
+	"github.com/joeblew999/plat-mjml/internal/mjml"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-package queue
+package events
 
 import (
 	"database/sql"

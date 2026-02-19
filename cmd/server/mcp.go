@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
-	"github.com/joeblew999/plat-mjml/pkg/mjml"
-	"github.com/joeblew999/plat-mjml/pkg/queue"
+	"github.com/joeblew999/plat-mjml/internal/model"
+	"github.com/joeblew999/plat-mjml/internal/mjml"
 	"github.com/zeromicro/go-zero/mcp"
 )
 
@@ -31,11 +32,11 @@ type getEmailStatusArgs struct {
 }
 
 // registerMCPTools registers all MCP tools for the email platform.
-func registerMCPTools(s mcp.McpServer, renderer *mjml.Renderer, q *queue.Queue) {
+func registerMCPTools(s mcp.McpServer, renderer *mjml.Renderer, emailsModel model.EmailsModel) {
 	registerRenderTool(s, renderer)
 	registerListTemplatesTool(s, renderer)
-	registerSendEmailTool(s, q)
-	registerGetEmailStatusTool(s, q)
+	registerSendEmailTool(s, emailsModel)
+	registerGetEmailStatusTool(s, emailsModel)
 }
 
 func registerRenderTool(s mcp.McpServer, renderer *mjml.Renderer) {
@@ -113,7 +114,7 @@ func registerListTemplatesTool(s mcp.McpServer, renderer *mjml.Renderer) {
 	})
 }
 
-func registerSendEmailTool(s mcp.McpServer, q *queue.Queue) {
+func registerSendEmailTool(s mcp.McpServer, emailsModel model.EmailsModel) {
 	tool := &mcp.Tool{
 		Name:        "send_email",
 		Description: "Queue an email for delivery. The email will be rendered using the specified template and sent to the recipients.",
@@ -138,15 +139,7 @@ func registerSendEmailTool(s mcp.McpServer, q *queue.Queue) {
 			}
 		}
 
-		job := queue.EmailJob{
-			TemplateSlug: args.Template,
-			Recipients:   args.To,
-			Subject:      args.Subject,
-			Data:         data,
-			Priority:     queue.PriorityNormal,
-		}
-
-		id, err := q.Enqueue(ctx, job)
+		id, err := emailsModel.Enqueue(ctx, args.Template, args.To, args.Subject, data, model.PriorityNormal)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to queue email: %w", err)
 		}
@@ -170,30 +163,30 @@ func registerSendEmailTool(s mcp.McpServer, q *queue.Queue) {
 	})
 }
 
-func registerGetEmailStatusTool(s mcp.McpServer, q *queue.Queue) {
+func registerGetEmailStatusTool(s mcp.McpServer, emailsModel model.EmailsModel) {
 	tool := &mcp.Tool{
 		Name:        "get_email_status",
 		Description: "Get the delivery status of a queued email by its ID.",
 	}
 
 	mcp.AddTool(s, tool, func(ctx context.Context, req *mcp.CallToolRequest, args getEmailStatusArgs) (*mcp.CallToolResult, any, error) {
-		job, err := q.GetStatus(ctx, args.ID)
+		email, err := emailsModel.FindOne(ctx, args.ID)
 		if err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				return nil, nil, fmt.Errorf("email not found: %s", args.ID)
+			}
 			return nil, nil, fmt.Errorf("failed to get status: %w", err)
-		}
-		if job == nil {
-			return nil, nil, fmt.Errorf("email not found: %s", args.ID)
 		}
 
 		result := map[string]any{
-			"id":         job.ID,
-			"template":   job.TemplateSlug,
-			"recipients": job.Recipients,
-			"subject":    job.Subject,
-			"status":     job.Status,
-			"attempts":   job.Attempts,
-			"error":      job.Error,
-			"created_at": job.CreatedAt,
+			"id":         email.Id,
+			"template":   email.TemplateSlug,
+			"recipients": model.ParseRecipients(email.Recipients),
+			"subject":    email.Subject,
+			"status":     email.Status,
+			"attempts":   email.Attempts,
+			"error":      model.NullStringValue(email.Error),
+			"created_at": email.CreatedAt,
 		}
 		resultJSON, err := json.Marshal(result)
 		if err != nil {

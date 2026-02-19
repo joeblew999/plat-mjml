@@ -2,8 +2,12 @@ package model
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/zeromicro/go-zero/core/stores/sqlx"
 )
 
@@ -19,6 +23,10 @@ type (
 		Stats(ctx context.Context) (map[string]int, error)
 		UpdateStatus(ctx context.Context, id, status string, errMsg string) error
 		MarkSent(ctx context.Context, id, messageID string) error
+		Enqueue(ctx context.Context, templateSlug string, recipients []string, subject string, data map[string]any, priority int) (string, error)
+		Receive(ctx context.Context) (*Emails, error)
+		MarkRetry(ctx context.Context, id string, retryAt time.Time, errMsg string) error
+		MarkFailed(ctx context.Context, id string, errMsg string) error
 	}
 
 	customEmailsModel struct {
@@ -104,3 +112,80 @@ func (m *customEmailsModel) MarkSent(ctx context.Context, id, messageID string) 
 	return err
 }
 
+// Enqueue adds an email with status 'pending'. Generates a UUID and marshals
+// recipients/data to JSON for storage. Returns the generated ID.
+func (m *customEmailsModel) Enqueue(ctx context.Context, templateSlug string, recipients []string, subject string, data map[string]any, priority int) (string, error) {
+	id := uuid.New().String()
+	if priority == 0 {
+		priority = PriorityNormal
+	}
+
+	recipientsJSON, err := json.Marshal(recipients)
+	if err != nil {
+		return "", fmt.Errorf("marshal recipients: %w", err)
+	}
+
+	var dataStr sql.NullString
+	if len(data) > 0 {
+		b, err := json.Marshal(data)
+		if err != nil {
+			return "", fmt.Errorf("marshal data: %w", err)
+		}
+		dataStr = sql.NullString{String: string(b), Valid: true}
+	}
+
+	query := fmt.Sprintf("insert into %s (`id`, `template_slug`, `recipients`, `subject`, `data`, `status`, `priority`, `attempts`, `max_attempts`, `created_at`, `updated_at`) values (?, ?, ?, ?, ?, 'pending', ?, 0, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)", m.table)
+	_, err = m.conn.ExecCtx(ctx, query, id, templateSlug, string(recipientsJSON), subject, dataStr, priority)
+	if err != nil {
+		return "", fmt.Errorf("enqueue email: %w", err)
+	}
+
+	return id, nil
+}
+
+// Receive atomically finds the next pending/retry job and marks it as 'processing'.
+// Uses TransactCtx for atomic SELECT + UPDATE. Returns nil if no jobs available.
+func (m *customEmailsModel) Receive(ctx context.Context) (*Emails, error) {
+	var row Emails
+	err := m.conn.TransactCtx(ctx, func(ctx context.Context, session sqlx.Session) error {
+		query := fmt.Sprintf("select %s from %s where `status` in ('pending', 'retry') and (`scheduled_at` is null or `scheduled_at` <= datetime('now')) order by `priority` desc, `created_at` asc limit 1", emailsRows, m.table)
+		if err := session.QueryRowCtx(ctx, &row, query); err != nil {
+			return err
+		}
+		_, err := session.ExecCtx(ctx,
+			fmt.Sprintf("update %s set `status` = 'processing', `updated_at` = CURRENT_TIMESTAMP where `id` = ?", m.table),
+			row.Id)
+		return err
+	})
+
+	switch err {
+	case nil:
+		return &row, nil
+	case sqlx.ErrNotFound:
+		return nil, nil
+	default:
+		return nil, err
+	}
+}
+
+// MarkRetry schedules an email for retry at the given time.
+func (m *customEmailsModel) MarkRetry(ctx context.Context, id string, retryAt time.Time, errMsg string) error {
+	var errStr sql.NullString
+	if errMsg != "" {
+		errStr = sql.NullString{String: errMsg, Valid: true}
+	}
+	query := fmt.Sprintf("update %s set `status` = 'retry', `error` = ?, `attempts` = `attempts` + 1, `scheduled_at` = ?, `updated_at` = CURRENT_TIMESTAMP where `id` = ?", m.table)
+	_, err := m.conn.ExecCtx(ctx, query, errStr, retryAt, id)
+	return err
+}
+
+// MarkFailed marks an email as permanently failed.
+func (m *customEmailsModel) MarkFailed(ctx context.Context, id string, errMsg string) error {
+	var errStr sql.NullString
+	if errMsg != "" {
+		errStr = sql.NullString{String: errMsg, Valid: true}
+	}
+	query := fmt.Sprintf("update %s set `status` = 'failed', `error` = ?, `attempts` = `attempts` + 1, `updated_at` = CURRENT_TIMESTAMP where `id` = ?", m.table)
+	_, err := m.conn.ExecCtx(ctx, query, errStr, id)
+	return err
+}

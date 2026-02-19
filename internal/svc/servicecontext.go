@@ -5,21 +5,28 @@ import (
 	"time"
 
 	"github.com/joeblew999/plat-mjml/internal/config"
-	"github.com/joeblew999/plat-mjml/pkg/db"
-	"github.com/joeblew999/plat-mjml/pkg/delivery"
+	"github.com/joeblew999/plat-mjml/internal/model"
+	"github.com/joeblew999/plat-mjml/internal/db"
+	"github.com/joeblew999/plat-mjml/internal/delivery"
+	"github.com/joeblew999/plat-mjml/internal/events"
 	"github.com/joeblew999/plat-mjml/pkg/mail"
-	"github.com/joeblew999/plat-mjml/pkg/mjml"
-	"github.com/joeblew999/plat-mjml/pkg/queue"
+	"github.com/joeblew999/plat-mjml/internal/mjml"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mr"
+	"github.com/zeromicro/go-zero/core/stores/sqlx"
 )
 
 type ServiceContext struct {
-	Config         config.Config
-	Renderer       *mjml.Renderer
-	Queue          *queue.Queue
-	DB             *db.DB
-	DeliveryEngine *delivery.Engine
+	Config             config.Config
+	EmailsModel        model.EmailsModel
+	TemplatesModel     model.TemplatesModel
+	EmailEventsModel   model.EmailEventsModel
+	SmtpProvidersModel model.SmtpProvidersModel
+	Conn               sqlx.SqlConn
+	Renderer           *mjml.Renderer
+	DeliveryEngine     *delivery.Engine
+	Events             *events.EventRecorder
+	DB                 *db.DB
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -46,9 +53,17 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		logx.Must(fmt.Errorf("failed to initialize: %w", err))
 	}
 
-	// Create queue using go-zero sqlx.SqlConn for circuit breaking + tracing
+	// Create go-zero sqlx.SqlConn for circuit breaking + tracing
 	conn := database.SqlConn()
-	emailQueue := queue.NewQueue(conn)
+
+	// Initialize go-zero models
+	emailsModel := model.NewEmailsModel(conn)
+	templatesModel := model.NewTemplatesModel(conn)
+	emailEventsModel := model.NewEmailEventsModel(conn)
+	smtpProvidersModel := model.NewSmtpProvidersModel(conn)
+
+	// Event recorder (batched BulkInserter for email_events)
+	eventRecorder, _ := events.NewEventRecorder(conn)
 
 	// Parse delivery config
 	retryBackoff, _ := time.ParseDuration(c.Delivery.RetryBackoff)
@@ -69,7 +84,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		FromName:  c.SMTP.FromName,
 	}
 
-	deliveryEngine := delivery.NewEngine(emailQueue, renderer, smtpConfig, delivery.Config{
+	deliveryEngine := delivery.NewEngine(emailsModel, eventRecorder, renderer, smtpConfig, delivery.Config{
 		MaxRetries:   c.Delivery.MaxRetries,
 		RetryBackoff: retryBackoff,
 		MaxBackoff:   maxBackoff,
@@ -77,19 +92,24 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	})
 
 	return &ServiceContext{
-		Config:         c,
-		Renderer:       renderer,
-		Queue:          emailQueue,
-		DB:             database,
-		DeliveryEngine: deliveryEngine,
+		Config:             c,
+		EmailsModel:        emailsModel,
+		TemplatesModel:     templatesModel,
+		EmailEventsModel:   emailEventsModel,
+		SmtpProvidersModel: smtpProvidersModel,
+		Conn:               conn,
+		Renderer:           renderer,
+		DeliveryEngine:     deliveryEngine,
+		Events:             eventRecorder,
+		DB:                 database,
 	}
 }
 
 // Close releases all resources held by the ServiceContext.
 func (s *ServiceContext) Close() {
-	if s.Queue.Events != nil {
+	if s.Events != nil {
 		logx.Info("Flushing email events")
-		s.Queue.Events.Flush()
+		s.Events.Flush()
 	}
 	logx.Info("Closing database")
 	s.DB.Close()
